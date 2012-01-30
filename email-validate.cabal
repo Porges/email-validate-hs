@@ -14,8 +14,8 @@ cabal-version:  >= 1.6
 
 
 source-repository head
-	type: git
-	location: git://github.com/Porges/email-validate-hs.git
+    type: git
+    location: git://github.com/Porges/email-validate-hs.git
 
 library
     build-depends: base >= 2 && < 5, parsec >= 3.0 || == 2.1.*, ranges >= 0.2.2
