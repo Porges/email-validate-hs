@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module Text.Email.Validate (isValid,validate,EmailAddress(..))
+module Text.Email.Validate (addrSpec,isValid,validate,EmailAddress(..))
 where
 
 import Control.Arrow ((***))
@@ -49,7 +49,6 @@ addrSpec = do
 	s1 <- getInput
 	char '@'
 	domain
-	eof
 	return (length s1)
 
 localPartParser = dottedAtoms
