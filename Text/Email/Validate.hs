@@ -1,5 +1,5 @@
 {-# LANGUAGE CPP #-}
-module Text.Email.Validate (isValid,validate,EmailAddress(..))
+module Text.Email.Validate (addrSpec,isValid,validate,EmailAddress(..))
 where
 
 import Control.Arrow ((***))
