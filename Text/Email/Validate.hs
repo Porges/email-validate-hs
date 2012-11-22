@@ -49,6 +49,7 @@ addrSpec = do
 	s1 <- getInput
 	char '@'
 	domain
+	eof
 	return (length s1)
 
 localPartParser = dottedAtoms
