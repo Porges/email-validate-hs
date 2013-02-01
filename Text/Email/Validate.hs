@@ -25,6 +25,9 @@ emailAddress x =
 		Left _  -> Nothing
 		Right em -> Just em
 
+canonicalizeEmail :: ByteString -> Maybe ByteString
+canonicalizeEmail = fmap toByteString . emailAddress
+
 localPart :: EmailAddress -> ByteString
 localPart (EmailAddress local _) = local
 
