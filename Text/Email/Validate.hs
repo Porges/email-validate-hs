@@ -1,96 +1,112 @@
-{-# LANGUAGE CPP #-}
-module Text.Email.Validate (addrSpec,isValid,validate,EmailAddress(..))
+module Text.Email.Validate (addrSpec,isValid,validate,EmailAddress,domainPart,localPart,toByteString)
 where
 
+import Control.Applicative
 import Control.Arrow ((***))
-import qualified Data.Ranges as Range
 import Data.Char (chr)
 
-#if MIN_VERSION_parsec(3,0,0)
-import Text.Parsec
-import Text.Parsec.Char
-#else 
-import Text.ParserCombinators.Parsec
-#endif
+import qualified Data.ByteString.Char8 as BS
+import Data.ByteString (ByteString)
 
--- | Constructor does no checking for invalid emails, so use at own risk.
-data EmailAddress = EmailAddress
-	{
-		localPart :: String,
-		domainPart :: String
-	}
+import Data.Attoparsec.ByteString.Char8
+import Data.Attoparsec.Combinator
+
+data EmailAddress = EmailAddress ByteString ByteString deriving (Eq,Ord)
 
 instance Show EmailAddress where
-	show (EmailAddress l d) = l ++ ('@' : d)
+	show = BS.unpack . toByteString
+
+toByteString (EmailAddress l d) = BS.concat [l, BS.pack "@", d]
+
+-- | Smart constructor for an email address
+emailAddress :: ByteString -> Maybe EmailAddress
+emailAddress x =
+	case validate x of
+		Left _  -> Nothing
+		Right em -> Just em
+
+localPart :: EmailAddress -> ByteString
+localPart (EmailAddress local _) = local
+
+domainPart :: EmailAddress -> ByteString
+domainPart (EmailAddress _ domain) = domain
 
 -- | Validates whether a particular string is an email address
 --   according to RFC5322.
-isValid :: String -> Bool
+isValid :: ByteString -> Bool
 isValid x = let result = validate x in
 	either (const False) (const True) result
 
-simply = (>> return ())
-
 -- | If you want to find out why a particular string is not
 --   an email address, use this!
-validate :: String -> Either ParseError EmailAddress
-validate x = case parse addrSpec "" x of
-	Right n -> Right $ EmailAddress local domain
-		where (local,at:domain) = splitAt (length x - n) x
-	Left e -> Left e
+validate :: ByteString -> Either String EmailAddress
+validate = parseOnly addrSpec
 
-#if MIN_VERSION_parsec(3,0,0)
-addrSpec :: Parsec String () Int
-#else
-addrSpec :: CharParser () Int
-#endif
 addrSpec = do
-	localPartParser
-	s1 <- getInput
+	localPart <- local
 	char '@'
-	domain
-	eof
-	return (length s1)
+	domainPart <- domain
+	endOfInput
+	return (EmailAddress localPart domainPart)
 
-localPartParser = dottedAtoms
+local = dottedAtoms
 domain = dottedAtoms <|> domainLiteral 
 
-dottedAtoms = simply $ (optional cfws >> (atom <|> quotedString) >> optional cfws)
-	`sepBy1` (char '.')
-atom = simply $ many1 atomText
-atomText = simply $ alphaNum <|> oneOf "!#$%&'*+-/=?^_`{|}~"
+dottedAtoms = BS.intercalate (BS.singleton '.') <$> 
+	(optional cfws *> (atom <|> quotedString) <* optional cfws)	`sepBy1` (char '.')
+atom = takeWhile1 isAtomText
 
-domainLiteral =  between (optional cfws >> char '[') (char ']' >> optional cfws) $
-	many (optional fws >> domainText) >> optional fws
-domainText = ranges [(33,90),(94,126)] <|> obsNoWsCtl
+isAtomText x = isAlphaNum x || inClass "!#$%&'*+/=?^_`{|}~-" x 
+atomText = satisfy isAtomText
 
+domainLiteral = (BS.cons '[' . flip BS.snoc ']' . BS.pack) <$> (between (optional cfws *> char '[') (char ']' <* optional cfws) $
+	many (optional fws >> domainText) <* optional fws)
+domainText = charInClass "\33-\90\94-\126" <|> obsNoWsCtl
 
-quotedString = between (char '"') (char '"') $
-	many (optional fws >> quotedContent) >> optional fws
-quotedContent = quotedText <|> quotedPair
-quotedText = ranges [(33,33),(35,91),(93,126)] <|> obsNoWsCtl
-quotedPair = char '\\' >> (vchar <|> wsp <|> lf <|> cr <|> obsNoWsCtl <|> nullChar)
+charInClass c = satisfy (inClass c) <?> "one of the following: " ++ c
 
-fws = (many1 wsp >> optional (crlf >> many1 wsp))
-	<|> (many1 (crlf >> many1 wsp) >> return ())
+quotedString = (\x -> BS.concat $ [BS.pack "\"", BS.concat x, BS.pack "\""]) <$> (between (char '"') (char '"') $
+	many (optional fws >> quotedContent) <* optional fws)
+quotedContent = (BS.singleton <$> quotedText) <|> quotedPair
+quotedText = charInClass "\33\35-\91\93-\126" <|> obsNoWsCtl
+quotedPair = (BS.cons '\\' . BS.singleton) <$> (char '\\' *> (vchar <|> wsp <|> lf <|> cr <|> obsNoWsCtl <|> nullChar))
 
-cfws = simply $ many (comment <|> fws)
-comment = simply $ between (char '(') (char ')') $
-	many (commentContent <|> fws)
+fws :: Parser ()
+fws = ignore $
+	ignore (wsp1 >> optional (crlf >> wsp1))
+	<|> ignore (many1 (crlf >> wsp1))
 
-commentContent = commentText <|> quotedPair <|> comment
-commentText = ranges [(33,39),(42,91),(93,126)] <|> obsNoWsCtl
+ignore :: Parser a -> Parser ()
+ignore x = x >> return ()
 
-nullChar = simply $ char '\0'
-wsp = simply $ oneOf " \t"
-cr = simply $ char '\r'
-lf = simply $ char '\n'
-crlf = simply $ cr >> lf
-vchar = ranges [(0x21,0x7e)]
-obsNoWsCtl = ranges [(1,8),(11,12),(14,31),(127,127)]
-ranges xs = simply $ satisfy (\c -> Range.inRanges c $ Range.ranges $ map (uncurry Range.range . (chr***chr)) $ xs)
+between l r x = l *> x <* r
 
-unitTest (x, y, z) = if isValid x == y then "" else (x ++": Should be "++show y ++", got "++show (not y)++"\n\t"++z++"\n")
+cfws = many (ignore comment <|> fws) >> return BS.empty
+
+comment :: Parser ()
+comment = ignore ((between (char '(') (char ')') $
+	many (ignore commentContent <|> fws)))
+
+commentContent = (BS.singleton <$> commentText) <|> quotedPair <|> (comment >> return BS.empty)
+commentText = charInClass "\33-\39\42-\91\93-\126" <|> obsNoWsCtl
+
+nullChar = char '\0'
+
+skipWhile1 x = satisfy x >> skipWhile x
+
+wsp1 = skipWhile1 isWsp
+wsp = satisfy isWsp
+
+isWsp x = x == ' ' || x == '\t'
+
+isAlphaNum x = isDigit x || isAlpha_ascii x
+cr = char '\r'
+lf = char '\n'
+crlf = (const $ BS.pack "\r\n") <$> cr *> lf
+vchar = charInClass "\x21-\x7e"
+obsNoWsCtl = charInClass "\1-\8\11-\12\14-\31\127"
+
+unitTest (x, y, z) = if not (isValid (BS.pack x) == y) then "" else (x ++" became "++ (case emailAddress (BS.pack x) of {Nothing -> "fail"; Just em -> show em}) ++": Should be "++show y ++", got "++show (not y)++"\n\t"++z++"\n")
 
 doSomeTests = do
 	putStr$unitTest("first.last@example.com", True, "")
