@@ -1,4 +1,4 @@
-module Text.Email.Validate (addrSpec,isValid,validate,EmailAddress,domainPart,localPart,toByteString)
+module Text.Email.Validate (addrSpec,isValid,validate,EmailAddress,domainPart,localPart,toByteString,canonicalizeEmail)
 where
 
 import Control.Applicative
