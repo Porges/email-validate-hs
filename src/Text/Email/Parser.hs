@@ -48,19 +48,20 @@ dottedAtoms = BS.intercalate (BS.singleton '.') <$>
 atom = takeWhile1 isAtomText
 
 isAtomText x = isAlphaNum x || inClass "!#$%&'*+/=?^_`{|}~-" x 
-atomText = satisfy isAtomText
 
-domainLiteral = (BS.cons '[' . flip BS.snoc ']' . BS.pack) <$> (between (optional cfws *> char '[') (char ']' <* optional cfws) $
-	many (optional fws >> domainText) <* optional fws)
-domainText = charInClass "\33-\90\94-\126" <|> obsNoWsCtl
+domainLiteral = (BS.cons '[' . flip BS.snoc ']' . BS.concat) <$> (between (optional cfws *> char '[') (char ']' <* optional cfws) $
+	many (optional fws >> takeWhile1 isDomainText) <* optional fws)
+isDomainText x = inClass "\33-\90\94-\126" x || isObsNoWsCtl x
 
-charInClass c = satisfy (inClass c) <?> "one of the following: " ++ c
-
-quotedString = (\x -> BS.concat $ [BS.pack "\"", BS.concat x, BS.pack "\""]) <$> (between (char '"') (char '"') $
+quotedString = (\x -> BS.concat $ [BS.singleton '"', BS.concat x, BS.singleton '"']) <$> (between (char '"') (char '"') $
 	many (optional fws >> quotedContent) <* optional fws)
-quotedContent = (BS.singleton <$> quotedText) <|> quotedPair
-quotedText = charInClass "\33\35-\91\93-\126" <|> obsNoWsCtl
+
+quotedContent = takeWhile1 isQuotedText <|> quotedPair
+isQuotedText x = inClass "\33\35-\91\93-\126" x || isObsNoWsCtl x
+
 quotedPair = (BS.cons '\\' . BS.singleton) <$> (char '\\' *> (vchar <|> wsp <|> lf <|> cr <|> obsNoWsCtl <|> nullChar))
+
+cfws = ignore $ many (comment <|> fws) 
 
 fws :: Parser ()
 fws = ignore $
@@ -72,14 +73,12 @@ ignore x = x >> return ()
 
 between l r x = l *> x <* r
 
-cfws = many (ignore comment <|> fws) >> return BS.empty
-
 comment :: Parser ()
 comment = ignore ((between (char '(') (char ')') $
 	many (ignore commentContent <|> fws)))
 
-commentContent = (BS.singleton <$> commentText) <|> quotedPair <|> (comment >> return BS.empty)
-commentText = charInClass "\33-\39\42-\91\93-\126" <|> obsNoWsCtl
+commentContent = skipWhile1 isCommentText <|> ignore quotedPair <|> comment
+isCommentText x = inClass "\33-\39\42-\91\93-\126" x || isObsNoWsCtl x
 
 nullChar = char '\0'
 
@@ -87,12 +86,15 @@ skipWhile1 x = satisfy x >> skipWhile x
 
 wsp1 = skipWhile1 isWsp
 wsp = satisfy isWsp
-
 isWsp x = x == ' ' || x == '\t'
 
 isAlphaNum x = isDigit x || isAlpha_ascii x
 cr = char '\r'
 lf = char '\n'
-crlf = (const $ BS.pack "\r\n") <$> cr *> lf
-vchar = charInClass "\x21-\x7e"
-obsNoWsCtl = charInClass "\1-\8\11-\12\14-\31\127"
+crlf = cr >> lf >> return ()
+
+isVchar = inClass "\x21-\x7e"
+vchar = satisfy isVchar
+
+isObsNoWsCtl = inClass "\1-\8\11-\12\14-\31\127"
+obsNoWsCtl = satisfy isObsNoWsCtl
