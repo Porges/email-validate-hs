@@ -1,5 +1,5 @@
 name:           email-validate
-version:        0.3.2
+version:        1.0.0
 license:        BSD3
 license-file:   LICENSE
 author:         George Pollard
@@ -10,17 +10,31 @@ synopsis:       Validating an email address string against RFC 5322
 description:    Validating an email address string against RFC 5322
 build-type:     Simple
 stability:      experimental
-cabal-version:  >= 1.6
-
+cabal-version:  >= 1.8
 
 source-repository head
     type: git
     location: git://github.com/Porges/email-validate-hs.git
 
 library
-    build-depends: base >= 2 && < 5, parsec >= 3.0 || == 2.1.*, ranges >= 0.2.2
+    build-depends: base >= 4 && < 5, attoparsec >= 0.10.0, bytestring >= 0.9
     ghc-options: -O2
-
-    extensions: CPP
+    hs-source-dirs: src
     exposed-modules:
-            Text.Email.Validate
+            Text.Email.Validate, Text.Email.Parser
+
+Test-Suite Main
+    type: exitcode-stdio-1.0
+    main-is: Main.hs
+    hs-source-dirs: tests
+    test-module Test.Text.Email.Validate
+    x-uses-tf: true
+    build-depends:
+        base >= 4 && < 5,
+        HUnit >= 1.2 && < 2,
+        email-validate,
+        QuickCheck >= 2.4,
+        test-framework >= 0.4.1,
+        test-framework-quickcheck2,
+        test-framework-hunit,
+        bytestring >= 0.9
