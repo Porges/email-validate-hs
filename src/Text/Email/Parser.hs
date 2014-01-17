@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
+
 module Text.Email.Parser
 	(addrSpec
 	,localPart
@@ -15,8 +18,12 @@ import Data.Char (chr)
 import Data.Attoparsec.ByteString.Char8
 import Data.Attoparsec.Combinator
 
+import Data.Data (Data, Typeable)
+import GHC.Generics (Generic)
+
 -- | Represents an email address.
-data EmailAddress = EmailAddress ByteString ByteString deriving (Eq,Ord)
+data EmailAddress = EmailAddress ByteString ByteString
+	deriving (Eq, Ord, Data, Typeable, Generic)
 
 instance Show EmailAddress where
 	show = BS.unpack . toByteString
@@ -24,7 +31,7 @@ instance Show EmailAddress where
 -- | Converts an email address back to a ByteString
 toByteString (EmailAddress l d) = BS.concat [l, BS.singleton '@', d]
 
--- | Extracts the local part of an email address. 
+-- | Extracts the local part of an email address.
 localPart :: EmailAddress -> ByteString
 localPart (EmailAddress local _) = local
 
@@ -41,13 +48,13 @@ addrSpec = do
 	return (EmailAddress localPart domainPart)
 
 local = dottedAtoms
-domain = dottedAtoms <|> domainLiteral 
+domain = dottedAtoms <|> domainLiteral
 
-dottedAtoms = BS.intercalate (BS.singleton '.') <$> 
+dottedAtoms = BS.intercalate (BS.singleton '.') <$>
 	(optional cfws *> (atom <|> quotedString) <* optional cfws)	`sepBy1` (char '.')
 atom = takeWhile1 isAtomText
 
-isAtomText x = isAlphaNum x || inClass "!#$%&'*+/=?^_`{|}~-" x 
+isAtomText x = isAlphaNum x || inClass "!#$%&'*+/=?^_`{|}~-" x
 
 domainLiteral = (BS.cons '[' . flip BS.snoc ']' . BS.concat) <$> (between (optional cfws *> char '[') (char ']' <* optional cfws) $
 	many (optional fws >> takeWhile1 isDomainText) <* optional fws)
@@ -61,7 +68,7 @@ isQuotedText x = inClass "\33\35-\91\93-\126" x || isObsNoWsCtl x
 
 quotedPair = (BS.cons '\\' . BS.singleton) <$> (char '\\' *> (vchar <|> wsp <|> lf <|> cr <|> obsNoWsCtl <|> nullChar))
 
-cfws = ignore $ many (comment <|> fws) 
+cfws = ignore $ many (comment <|> fws)
 
 fws :: Parser ()
 fws = ignore $
