@@ -20,13 +20,22 @@ import Data.Attoparsec.Combinator
 
 import Data.Data (Data, Typeable)
 import GHC.Generics (Generic)
+import qualified Text.Read as Read
 
 -- | Represents an email address.
 data EmailAddress = EmailAddress ByteString ByteString
 	deriving (Eq, Ord, Data, Typeable, Generic)
 
 instance Show EmailAddress where
-	show = BS.unpack . toByteString
+	show = show . toByteString
+
+instance Read EmailAddress where
+	readListPrec = Read.readListPrecDefault
+	readPrec = Read.parens (do
+		bs <- Read.readPrec
+		case parseOnly addrSpec bs of
+			Left  _ -> Read.pfail
+			Right a -> return a)
 
 -- | Converts an email address back to a ByteString
 toByteString (EmailAddress l d) = BS.concat [l, BS.singleton '@', d]

@@ -18,12 +18,16 @@ main = defaultMain tests
 
 tests :: [TF.Test]
 tests = [
+        testGroup "EmailAddress Show/Read instances" [
+                testProperty "showLikeByteString" prop_showLikeByteString,
+                testProperty "showAndReadBack" prop_showAndReadBack
+                ],
         testGroup "QuickCheck Text.Email.Validate" [
                 testProperty "doubleCanonicalize" prop_doubleCanonicalize
                 ],
-        testGroup "Unit tests Text.Email.Validate" $ flip concatMap units 
+        testGroup "Unit tests Text.Email.Validate" $ flip concatMap units
             (\(em, valid, why) -> let email = BS.pack em
-                in 
+                in
                     [
                     testCase ("doubleCanonicalize '" ++ em ++ "'") (True @=? case emailAddress email of { Nothing -> True; Just ok -> prop_doubleCanonicalize ok }),
                     testCase ("validity test '" ++ em ++ "'") (valid @=? isValid email)
@@ -46,6 +50,12 @@ isEmail l d = isValid (makeEmailLike l d)
 makeEmailLike l d = BS.concat [l, BS.singleton '@', d]
 
 prop_doubleCanonicalize email =  Just email == emailAddress (toByteString email)
+
+prop_showLikeByteString :: EmailAddress -> Bool
+prop_showLikeByteString email = show (toByteString email) == show email
+
+prop_showAndReadBack :: EmailAddress -> Bool
+prop_showAndReadBack email = read (show email) == email
 
 --unitTest (x, y, z) = if not (isValid (BS.pack x) == y) then "" else (x ++" became "++ (case emailAddress (BS.pack x) of {Nothing -> "fail"; Just em -> show em}) ++": Should be "++show y ++", got "++show (not y)++"\n\t"++z++"\n")
 
