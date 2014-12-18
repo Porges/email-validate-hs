@@ -27,6 +27,7 @@ library
                  , bytestring >= 0.9
                  , ghc-prim
     ghc-options: -O2
+    extensions: DeriveGeneric, DeriveDataTypeable
     hs-source-dirs: src
     exposed-modules: Text.Email.Validate
                    , Text.Email.Parser
