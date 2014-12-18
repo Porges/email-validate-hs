@@ -11,7 +11,7 @@ module Text.Email.Validate
 where
 
 import Data.ByteString (ByteString)
-import Data.Attoparsec (parseOnly)
+import Data.Attoparsec.ByteString (parseOnly)
 
 import Text.Email.Parser (EmailAddress, toByteString, addrSpec, localPart, domainPart)
 
