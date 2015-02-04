@@ -1,6 +1,6 @@
 module Main where
 
-import Data.Maybe (catMaybes)
+
 import Text.Email.Validate
 import Test.HUnit
 
@@ -26,7 +26,7 @@ tests = [
                 testProperty "doubleCanonicalize" prop_doubleCanonicalize
                 ],
         testGroup "Unit tests Text.Email.Validate" $ flip concatMap units
-            (\(em, valid, why) -> let email = BS.pack em
+            (\(em, valid, _) -> let email = BS.pack em
                 in
                     [
                     testCase ("doubleCanonicalize '" ++ em ++ "'") (True @=? case emailAddress email of { Nothing -> True; Just ok -> prop_doubleCanonicalize ok }),
@@ -40,15 +40,18 @@ instance Arbitrary ByteString where
 instance Arbitrary EmailAddress where
     arbitrary = do
         local <- suchThat arbitrary (\x -> isEmail x (BS.pack "example.com"))
-        domain <- suchThat arbitrary (\x -> isEmail (BS.pack "example") x)
+        domain <- suchThat arbitrary (isEmail (BS.pack "example"))
         let email = makeEmailLike local domain
         let (Just result) = emailAddress email
         return result
 
+isEmail :: ByteString -> ByteString -> Bool
 isEmail l d = isValid (makeEmailLike l d)
 
+makeEmailLike :: ByteString -> ByteString -> ByteString
 makeEmailLike l d = BS.concat [l, BS.singleton '@', d]
 
+prop_doubleCanonicalize :: EmailAddress -> Bool
 prop_doubleCanonicalize email =  Just email == emailAddress (toByteString email)
 
 prop_showLikeByteString :: EmailAddress -> Bool
@@ -59,6 +62,7 @@ prop_showAndReadBack email = read (show email) == email
 
 --unitTest (x, y, z) = if not (isValid (BS.pack x) == y) then "" else (x ++" became "++ (case emailAddress (BS.pack x) of {Nothing -> "fail"; Just em -> show em}) ++": Should be "++show y ++", got "++show (not y)++"\n\t"++z++"\n")
 
+units :: [(String, Bool, String)]
 units = [
     ("first.last@example.com", True, ""),
     ("1234567890123456789012345678901234567890123456789012345678901234@example.com", True, ""),
