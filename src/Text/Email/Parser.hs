@@ -83,7 +83,7 @@ isDomainText :: Char -> Bool
 isDomainText x = inClass "\33-\90\94-\126" x || isObsNoWsCtl x
 
 quotedString :: Parser ByteString
-quotedString = 
+quotedString =
     (\x -> BS.concat [BS.singleton '"', BS.concat x, BS.singleton '"']) <$>
         between (char '"') (char '"')
             (many (optional fws >> quotedContent) <* optional fws)
@@ -98,12 +98,10 @@ quotedPair :: Parser ByteString
 quotedPair = (BS.cons '\\' . BS.singleton) <$> (char '\\' *> (vchar <|> wsp <|> lf <|> cr <|> obsNoWsCtl <|> nullChar))
 
 cfws :: Parser ()
-cfws = void $ many (comment <|> fws)
+cfws = skipMany (comment <|> fws)
 
 fws :: Parser ()
-fws =
-    void (wsp1 >> optional (crlf >> wsp1)) <|>
-    void            (many1 (crlf >> wsp1))
+fws = void (wsp1 >> optional (crlf >> wsp1)) <|> (skipMany1 (crlf >> wsp1))
 
 between :: Applicative f => f l -> f r -> f a -> f a
 between l r x = l *> x <* r
@@ -112,7 +110,7 @@ between1 :: Applicative f => f lr -> f a -> f a
 between1 lr x = lr *> x <* lr
 
 comment :: Parser ()
-comment = void $ between (char '(') (char ')') $ many (void commentContent <|> fws)
+comment = between (char '(') (char ')') $ skipMany (void commentContent <|> fws)
 
 commentContent :: Parser ()
 commentContent = skipWhile1 isCommentText <|> void quotedPair <|> comment
