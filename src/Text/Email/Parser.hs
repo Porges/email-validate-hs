@@ -52,7 +52,6 @@ addrSpec = do
     l <- local
     _ <- char '@'
     d <- domain
-    endOfInput
     return (EmailAddress l d)
 
 local :: Parser ByteString
