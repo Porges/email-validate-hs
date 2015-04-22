@@ -1,5 +1,5 @@
 name:           email-validate
-version:        2.1.0
+version:        2.1.1
 license:        BSD3
 license-file:   LICENSE
 author:         George Pollard <porges@porg.es>
@@ -19,7 +19,7 @@ source-repository head
 source-repository this
     type: git
     location: git://github.com/Porges/email-validate-hs.git
-    tag: v2.1.0
+    tag: v2.1.1
 
 library
     build-depends:
