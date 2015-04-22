@@ -29,10 +29,14 @@ instance Show EmailAddress where
     show = show . toByteString
 
 instance Read EmailAddress where
-    readsPrec _ s = go (parse addrSpec $ BS.pack s) where
+    readsPrec _ ('"':s) = go (parse addrSpec $ BS.pack s) where
         go (Fail _ _ _) = []
         go (Partial f)  = go (f BS.empty)
-        go (Done r adr) = [(adr, BS.unpack r)]
+        go (Done r adr) = 
+            case BS.unpack r of
+                ('"':r') -> [(adr, r')]
+                _ -> []
+    readsPrec _ _ = []
 
 -- | Converts an email address back to a ByteString
 toByteString :: EmailAddress -> ByteString

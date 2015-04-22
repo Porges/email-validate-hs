@@ -20,6 +20,7 @@ tests :: [TF.Test]
 tests = [
         testGroup "EmailAddress Show/Read instances" [
                 testProperty "showLikeByteString" prop_showLikeByteString,
+                testProperty "showAndReadBackWithoutQuoteFails" prop_showAndReadBackWithoutQuoteFails,
                 testProperty "showAndReadBack" prop_showAndReadBack
                 ],
         testGroup "QuickCheck Text.Email.Validate" [
@@ -58,7 +59,18 @@ prop_showLikeByteString :: EmailAddress -> Bool
 prop_showLikeByteString email = show (toByteString email) == show email
 
 prop_showAndReadBack :: EmailAddress -> Bool
-prop_showAndReadBack email = read (read (show email)) == email
+prop_showAndReadBack email = read (show email) == email
+
+readMaybe :: String -> Maybe EmailAddress
+readMaybe s = case reads s of
+              [(x, "")] -> Just x
+              _ -> Nothing
+
+prop_showAndReadBackWithoutQuoteFails :: EmailAddress -> Bool
+prop_showAndReadBackWithoutQuoteFails email =
+    readMaybe (init s) == Nothing &&
+    readMaybe (tail s) == Nothing
+    where s = show email
 
 --unitTest (x, y, z) = if not (isValid (BS.pack x) == y) then "" else (x ++" became "++ (case emailAddress (BS.pack x) of {Nothing -> "fail"; Just em -> show em}) ++": Should be "++show y ++", got "++show (not y)++"\n\t"++z++"\n")
 
