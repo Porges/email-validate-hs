@@ -58,7 +58,7 @@ prop_showLikeByteString :: EmailAddress -> Bool
 prop_showLikeByteString email = show (toByteString email) == show email
 
 prop_showAndReadBack :: EmailAddress -> Bool
-prop_showAndReadBack email = read (show email) == email
+prop_showAndReadBack email = read (read (show email)) == email
 
 --unitTest (x, y, z) = if not (isValid (BS.pack x) == y) then "" else (x ++" became "++ (case emailAddress (BS.pack x) of {Nothing -> "fail"; Just em -> show em}) ++": Should be "++show y ++", got "++show (not y)++"\n\t"++z++"\n")
 

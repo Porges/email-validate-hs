@@ -2,7 +2,7 @@ module Text.Email.Validate
 	( isValid
 	, validate
 	, emailAddress
-	, canonicalizeEmail 
+	, canonicalizeEmail
 	, EmailAddress -- re-exported
 	, localPart
 	, domainPart
@@ -10,8 +10,10 @@ module Text.Email.Validate
 	)
 where
 
+import Control.Applicative ((<*))
+
 import Data.ByteString (ByteString)
-import Data.Attoparsec.ByteString (parseOnly)
+import Data.Attoparsec.ByteString (parseOnly, endOfInput)
 
 import Text.Email.Parser (EmailAddress, toByteString, addrSpec, localPart, domainPart)
 
@@ -32,4 +34,4 @@ isValid = either (const False) (const True) . validate
 -- | If you want to find out *why* a particular string is not
 --   an email address, use this.
 validate :: ByteString -> Either String EmailAddress
-validate = parseOnly addrSpec
+validate = parseOnly (addrSpec <* endOfInput)
