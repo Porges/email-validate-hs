@@ -1,6 +1,5 @@
 module Main where
 
-
 import Text.Email.Validate
 import Test.HUnit
 
@@ -23,16 +22,22 @@ tests = [
                 testProperty "showAndReadBackWithoutQuoteFails" prop_showAndReadBackWithoutQuoteFails,
                 testProperty "showAndReadBack" prop_showAndReadBack
                 ],
+
         testGroup "QuickCheck Text.Email.Validate" [
                 testProperty "doubleCanonicalize" prop_doubleCanonicalize
                 ],
+
         testGroup "Unit tests Text.Email.Validate" $ flip concatMap units
             (\(em, valid, _) -> let email = BS.pack em
                 in
                     [
                     testCase ("doubleCanonicalize '" ++ em ++ "'") (True @=? case emailAddress email of { Nothing -> True; Just ok -> prop_doubleCanonicalize ok }),
                     testCase ("validity test '" ++ em ++ "'") (valid @=? isValid email)
-                    ])
+                    ]),
+
+        testGroup "Issues" [
+            testCase "#12" (let (Right em) = validate (BS.pack "\"\"@1") in em @=? read (show em))
+            ]
        ]
 
 instance Arbitrary ByteString where
