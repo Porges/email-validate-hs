@@ -15,7 +15,7 @@ import           Control.Applicative        ((<*))
 import           Data.Attoparsec.ByteString (endOfInput, parseOnly)
 import           Data.ByteString            (ByteString)
 
-import           Text.Email.Parser          (EmailAddress, addrSpec, domainPart,
+import           Text.Email.Parser          (EmailAddress(..), addrSpec, domainPart,
                                              localPart, toByteString)
 
 -- | Smart constructor for an email address
