@@ -3,7 +3,8 @@ module Text.Email.Validate
         , validate
         , emailAddress
         , canonicalizeEmail
-        , EmailAddress(..) -- re-exported
+        , EmailAddress -- re-exported
+        , unsafeEmailAddress
         , localPart
         , domainPart
         , toByteString
@@ -16,7 +17,7 @@ import           Data.Attoparsec.ByteString (endOfInput, parseOnly)
 import           Data.ByteString            (ByteString)
 
 import           Text.Email.Parser          (EmailAddress(..), addrSpec, domainPart,
-                                             localPart, toByteString)
+                                             localPart, toByteString, unsafeEmailAddress)
 
 -- | Smart constructor for an email address
 emailAddress :: ByteString -> Maybe EmailAddress

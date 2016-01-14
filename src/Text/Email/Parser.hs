@@ -4,7 +4,8 @@ module Text.Email.Parser
     ( addrSpec
     , localPart
     , domainPart
-    , EmailAddress(..)
+    , EmailAddress
+    , unsafeEmailAddress
     , toByteString
     )
 where
@@ -24,6 +25,13 @@ import qualified Text.Read as Read
 -- | Represents an email address.
 data EmailAddress = EmailAddress ByteString ByteString
     deriving (Eq, Ord, Data, Typeable, Generic)
+
+-- | Creates an email address without validating it.
+--   You should only use this when reading data from
+--   somewhere it has already been validated (e.g. a
+--   database).
+unsafeEmailAddress :: ByteString -> ByteString -> EmailAddress
+unsafeEmailAddress = EmailAddress
 
 instance Show EmailAddress where
     show = show . toByteString
