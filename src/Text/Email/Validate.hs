@@ -1,21 +1,22 @@
 module Text.Email.Validate
-	( isValid
-	, validate
-	, emailAddress
-	, canonicalizeEmail
-	, EmailAddress -- re-exported
-	, localPart
-	, domainPart
-	, toByteString
-	)
+        ( isValid
+        , validate
+        , emailAddress
+        , canonicalizeEmail
+        , EmailAddress(..) -- re-exported
+        , localPart
+        , domainPart
+        , toByteString
+        )
 where
 
-import Control.Applicative ((<*))
+import           Control.Applicative        ((<*))
 
-import Data.ByteString (ByteString)
-import Data.Attoparsec.ByteString (parseOnly, endOfInput)
+import           Data.Attoparsec.ByteString (endOfInput, parseOnly)
+import           Data.ByteString            (ByteString)
 
-import Text.Email.Parser (EmailAddress, toByteString, addrSpec, localPart, domainPart)
+import           Text.Email.Parser          (EmailAddress(..), addrSpec, domainPart,
+                                             localPart, toByteString)
 
 -- | Smart constructor for an email address
 emailAddress :: ByteString -> Maybe EmailAddress

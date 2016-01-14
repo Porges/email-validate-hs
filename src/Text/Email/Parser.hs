@@ -4,7 +4,7 @@ module Text.Email.Parser
     ( addrSpec
     , localPart
     , domainPart
-    , EmailAddress
+    , EmailAddress(..)
     , toByteString
     )
 where
