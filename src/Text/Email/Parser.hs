@@ -7,6 +7,7 @@ module Text.Email.Parser
     , EmailAddress
     , unsafeEmailAddress
     , toByteString
+    , dottedAtoms
     )
 where
 
