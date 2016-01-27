@@ -10,6 +10,8 @@ module Text.Email.Parser
     )
 where
 
+import Text.Domain.Parser (domainParser)
+
 import Control.Applicative
 import Control.Monad (void)
 
@@ -68,7 +70,14 @@ local :: Parser ByteString
 local = dottedAtoms
 
 domain :: Parser ByteString
-domain = dottedAtoms <|> domainLiteral
+domain = domainName <|> domainLiteral
+
+domainName :: Parser ByteString
+domainName = do
+    raw <- BS.append <$> dottedAtoms <*> option BS.empty (string (BS.pack "."))
+    case parseOnly (domainParser <* endOfInput) raw of
+        Left err -> fail err
+        Right result -> return result
 
 dottedAtoms :: Parser ByteString
 dottedAtoms = BS.intercalate (BS.singleton '.') <$>
