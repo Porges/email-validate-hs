@@ -1,5 +1,5 @@
 So you want to validate an email address...
----
+===
 
 This is a list of RFCs that are related to parsing and validating an email address. Yes, you will need all of them in some way or another. (And no, this library does not do everything correctly - it's lacking all the Unicode support.)
 
@@ -36,7 +36,7 @@ That said, this is a huge cop-out of an RFC. It's basically a thunk for [UAX#15]
 UAX#15 defines a family of Unicode "normalization" algorithms -- in simple terms, what it does is tell you how to convert "é" into "é", or vice versa.
 
 Domain Names
-===
+---
 
 The email address specification in 5322 is intentionally imprecise with regards to domain names. We can't have that.
 
@@ -49,7 +49,7 @@ This defines the syntax of a domain name.
 This relaxes the syntax of a domain name to allow it to start with a digit. It also shows you how to write down or read 32-bit numbers (IPv4 addresses), so you can skip 780 or 790.
 
 IP Literals
-===
+---
 
 ### [RFC4291](https://tools.ietf.org/html/rfc4291): IP Version 6 Addressing Architecture
 
@@ -60,7 +60,7 @@ This describes how to write down or read 128-bit numbers (IPv6 addresses).
 This describes how to write down or read 32-bit numbers as if they were 128-bit-numbers.
 
 Limits
-===
+---
 
 ### [RFC1034](https://tools.ietf.org/html/rfc1034): DOMAIN NAMES - CONCEPTS AND FACILITIES
 ### [RFC1035](https://tools.ietf.org/html/rfc1035): DOMAIN NAMES - IMPLEMENTATION AND SPECIFICATION
@@ -78,7 +78,7 @@ This RFC tells you that an email address can be up to 320 octets long.
 This RFC tells you that if you actually wish to send an email to an email address, it had better not be longer than 254 octets (see Erratum 1690 on RFC3696).
 
 Unicode in Domain Names
-===
+---
 
 ### [RFC3492](https://tools.ietf.org/html/rfc3492): Punycode: A Bootstring encoding of Unicode for Internationalized Domain Names in Applications (IDNA)
 
@@ -126,7 +126,7 @@ Because you should put the hardest part of Unicode into a security-critical synt
 This RFC explains why it took 4 RFCs to define IDNA.
 
 Meta
-===
+---
 
 ### [RFC2119](https://tools.ietf.org/html/rfc2119): Key words for use in RFCs to Indicate Requirement Levels
 
@@ -138,7 +138,7 @@ You should use these names in your test suite.
 
 
 You might need these, I'm not sure
-===
+---
 
 ### [RFC7564](https://tools.ietf.org/html/rfc7564): PRECIS Framework: Preparation, Enforcement, and Comparison of Internationalized Strings in Application Protocols
 
