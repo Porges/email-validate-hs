@@ -60,11 +60,7 @@ domainPart (EmailAddress _ d) = d
 
 -- | A parser for email addresses.
 addrSpec :: Parser EmailAddress
-addrSpec = do
-    l <- local
-    _ <- char '@'
-    d <- domain
-    return (EmailAddress l d)
+addrSpec = EmailAddress <$> local <* char '@' <*> domain
 
 local :: Parser ByteString
 local = dottedAtoms
@@ -81,7 +77,8 @@ domainName = do
 
 dottedAtoms :: Parser ByteString
 dottedAtoms = BS.intercalate (BS.singleton '.') <$>
-        between1 (optional cfws) (atom <|> quotedString) `sepBy1` char '.'
+        between1 (optional cfws)
+            (atom <|> quotedString) `sepBy1` char '.'
 
 atom :: Parser ByteString
 atom = takeWhile1 isAtomText
@@ -100,8 +97,8 @@ isDomainText x = inClass "\33-\90\94-\126" x || isObsNoWsCtl x
 
 quotedString :: Parser ByteString
 quotedString =
-    (\x -> BS.concat [BS.singleton '"', BS.concat x, BS.singleton '"']) <$>
-        between (char '"') (char '"')
+    (BS.cons '"' . flip BS.snoc '"' . BS.concat) <$>
+        between1 (char '"')
             (many (optional fws >> quotedContent) <* optional fws)
 
 quotedContent :: Parser ByteString
