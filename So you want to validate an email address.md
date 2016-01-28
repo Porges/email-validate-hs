@@ -1,7 +1,7 @@
 So you want to validate an email address...
 ---
 
-This is a list of RFCs that are related to parsing and validating an email address. Yes, you will need all of them in some way or another.
+This is a list of RFCs that are related to parsing and validating an email address. Yes, you will need all of them in some way or another. (And no, this library does not do everything correctly - it's lacking all the Unicode support.)
 
 I've tried to avoid listing obsoleted RFCs, so for example we have 5322 instead of 2822 and 5321 instead of 2821.
 
