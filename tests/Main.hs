@@ -2,17 +2,15 @@
 
 module Main where
 
-import Text.Email.Validate
-import Test.HUnit
-
-import Data.ByteString (ByteString)
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
+import           Test.Framework as TF (defaultMain, testGroup, Test)
+import           Test.Framework.Providers.HUnit
+import           Test.Framework.Providers.QuickCheck2 (testProperty)
+import           Test.HUnit
+import           Test.QuickCheck
 
-import Test.Framework as TF (defaultMain, testGroup, Test)
-import Test.Framework.Providers.HUnit
-import Test.Framework.Providers.QuickCheck2 (testProperty)
-
-import Test.QuickCheck
+import           Text.Email.Validate
 
 main :: IO ()
 main = defaultMain tests
