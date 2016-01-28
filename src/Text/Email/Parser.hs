@@ -13,18 +13,10 @@ import           Control.Monad (void)
 import           Data.Attoparsec.ByteString.Char8
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
-import qualified Text.Read as Read
 
 import           Data.EmailAddress
 import           Text.Domain.Parser (domainParser)
 
-instance Read EmailAddress where
-    readListPrec = Read.readListPrecDefault
-    readPrec = Read.parens (do
-        bs <- Read.readPrec
-        case parseOnly (addrSpec <* endOfInput) bs of
-            Left  _ -> Read.pfail
-            Right a -> return a)
 
 -- | A parser for email addresses.
 addrSpec :: Parser EmailAddress

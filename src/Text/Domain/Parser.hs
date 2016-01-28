@@ -5,14 +5,11 @@ module Text.Domain.Parser
     )
 where
 
-import Control.Applicative
-import Control.Monad (void, guard)
-
+import           Control.Applicative
+import           Control.Monad (guard)
+import           Data.Attoparsec.ByteString.Char8
 import qualified Data.ByteString.Char8 as BS
-import Data.ByteString (ByteString)
-
-import Data.Attoparsec.ByteString.Char8
-
+import           Data.ByteString (ByteString)
 
 domainParser :: Parser ByteString
 domainParser = do

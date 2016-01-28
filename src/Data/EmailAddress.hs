@@ -8,12 +8,14 @@ module Data.EmailAddress
     )
 where
 
+import           Data.Attoparsec.ByteString.Char8
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Data (Data, Typeable)
 import           GHC.Generics (Generic)
 import qualified Text.Read as Read
 
+import {-# SOURCE #-} Text.Email.Parser (addrSpec)
 
 -- | Represents an email address.
 data EmailAddress = EmailAddress ByteString ByteString
@@ -28,6 +30,14 @@ unsafeEmailAddress = EmailAddress
 
 instance Show EmailAddress where
     show = show . toByteString
+
+instance Read EmailAddress where
+    readListPrec = Read.readListPrecDefault
+    readPrec = Read.parens (do
+        bs <- Read.readPrec
+        case parseOnly (addrSpec <* endOfInput) bs of
+            Left  _ -> Read.pfail
+            Right a -> return a)
 
 -- | Converts an email address back to a ByteString
 toByteString :: EmailAddress -> ByteString
