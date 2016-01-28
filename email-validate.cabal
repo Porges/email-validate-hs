@@ -30,7 +30,6 @@ library
     hs-source-dirs: src
     ghc-options: -Wall
     exposed-modules:
-        Data.EmailAddress,
         Text.Domain.Parser,
         Text.Email.Validate,
         Text.Email.Parser
