@@ -29,11 +29,11 @@ Okay, you probably don't need this as your language likely has facilities to do 
 
 ### [RFC5198](https://tools.ietf.org/html/rfc5198): Unicode Format for Network Interchange
 
-This falls into a similar category, but I think Javascript doesn't get support until ES6, and you'll be supporting IE10 forever.
+This falls into a similar category as the previous RFC, but I think Javascript doesn't get support until ES6 -- and you'll be supporting IE10 forever.
 
 That said, this is a huge cop-out of an RFC. It's basically a thunk for [UAX#15](http://unicode.org/reports/tr15/), so go read that instead.
 
-Anyway, what it does is tell you how to convert "é" into "é", or vice versa.
+UAX#15 defines a family of Unicode "normalization" algorithms -- in simple terms, what it does is tell you how to convert "é" into "é", or vice versa.
 
 Domain Names
 ===
