@@ -34,4 +34,4 @@ isValid = either (const False) (const True) . validate
 -- | If you want to find out *why* a particular string is not
 --   an email address, use this.
 validate :: ByteString -> Either String EmailAddress
-validate = parseOnly (addrSpec <* endOfInput)
+validate = parseOnly (addrSpec >>= \r -> endOfInput >> return r)
