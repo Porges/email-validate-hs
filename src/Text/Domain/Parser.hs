@@ -1,15 +1,16 @@
-{-# LANGUAGE DeriveDataTypeable, DeriveGeneric #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Text.Domain.Parser
     ( domainParser
     )
 where
 
-import           Control.Applicative
-import           Control.Monad (guard)
-import           Data.Attoparsec.ByteString.Char8
+import Control.Applicative
+import Control.Monad (guard)
+import Data.Attoparsec.ByteString.Char8
 import qualified Data.ByteString.Char8 as BS
-import           Data.ByteString (ByteString)
+import Data.ByteString (ByteString)
 
 domainParser :: Parser ByteString
 domainParser = do
