@@ -11,7 +11,7 @@ module Text.Email.Parser
 where
 
 import           Control.Applicative
-import           Control.Monad (void)
+import           Control.Monad (guard, void)
 import           Data.Attoparsec.ByteString.Char8
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
@@ -67,10 +67,26 @@ domain = domainName <|> domainLiteral
 
 domainName :: Parser ByteString
 domainName = do
-    raw <- BS.append <$> dottedAtoms <*> option BS.empty (string (BS.pack "."))
-    case parseOnly (domainParser <* endOfInput) raw of
-        Left err -> fail err
-        Right result -> return result
+    domain <- BS.intercalate (BS.singleton '.') <$> domainLabel `sepBy1` char '.' <* optional (char '.')
+
+    -- domain name must be no greater than 253 chars
+    guard (BS.length domain <= 253)
+    return domain
+
+domainLabel :: Parser ByteString
+domainLabel = do
+    content <- between1 (optional cfws) (fst <$> match (alphaNum >> skipWhile isAlphaNumHyphen))
+
+    -- label must be no greater than 63 chars and cannot end with '-'
+    -- (we already enforced that it does not start with '-')
+    guard (BS.length content <= 63 && BS.last content /= '-')
+    return content
+
+alphaNum :: Parser Char
+alphaNum = satisfy isAlphaNum
+
+isAlphaNumHyphen :: Char -> Bool
+isAlphaNumHyphen x = isDigit x || isAlpha_ascii x || x == '-'
 
 dottedAtoms :: Parser ByteString
 dottedAtoms = BS.intercalate (BS.singleton '.') <$>
