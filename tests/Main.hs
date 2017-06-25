@@ -1,63 +1,98 @@
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main where
 
-import           Data.ByteString (ByteString)
+import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
-import           Test.Framework as TF (defaultMain, testGroup, Test)
-import           Test.Framework.Providers.HUnit
-import           Test.Framework.Providers.QuickCheck2 (testProperty)
-import           Test.HUnit
-import           Test.QuickCheck
+import Data.Maybe (Maybe(..), isNothing)
 
-import           Text.Email.Validate
+import Test.Framework as TF (defaultMain, testGroup, Test)
+import Test.Framework.Providers.HUnit (testCase)
+import Test.Framework.Providers.QuickCheck2 (testProperty)
+
+import Test.HUnit ((@?=), assert)
+import Test.QuickCheck (Arbitrary(..), suchThat)
+
+import Text.Email.Validate
+    ( EmailAddress
+    , canonicalizeEmail
+    , domainPart
+    , emailAddress
+    , localPart
+    , isValid
+    , toByteString
+    , validate
+    , unsafeEmailAddress
+    )
 
 main :: IO ()
-main = defaultMain tests
+main = defaultMain testGroups
 
-tests :: [TF.Test]
-tests = [
-        testGroup "EmailAddress Show/Read instances" [
-                testProperty "showLikeByteString" prop_showLikeByteString,
-                testProperty "showAndReadBackWithoutQuoteFails" prop_showAndReadBackWithoutQuoteFails,
-                testProperty "showAndReadBack" prop_showAndReadBack
-                ],
+{- Tests -}
 
-        testGroup "QuickCheck Text.Email.Validate" [
-                testProperty "doubleCanonicalize" prop_doubleCanonicalize
-                ],
+testGroups :: [Test]
+testGroups =
+    [ showAndRead
+    , canonicalization
+    , exampleTests
+    , specificFailures
+    , simpleAccessors
+    ]
 
-        testGroup "Unit tests Text.Email.Validate" $ flip concatMap units
-            (\(email, valid, reason) ->
-                    [
-                    testCase ("doubleCanonicalize test (" ++ reason ++ "): " ++ show email)
-                        (True @=? case emailAddress email of { Nothing -> True; Just ok -> prop_doubleCanonicalize ok }),
-                    testCase ("validity test (" ++ reason ++ "): " ++ show email)
-                        (valid @=? isValid email)
-                    ]),
+canonicalization =
+    testGroup "QuickCheck Text.Email.Validate"
+    [ testProperty "doubleCanonicalize" prop_doubleCanonicalize
+    ]
 
-        testGroup "Specifics" [
-            testCase "Issue #12" (let (Right em) = validate (BS.pack "\"\"@1") in em @=? read (show em)),
-            testCase "Check canonicalization of trailing dot" (canonicalizeEmail "foo@bar.com." @=? Just "foo@bar.com")
+exampleTests =
+    testGroup "Unit tests Text.Email.Validate" (concatMap exampleTest examples)
+    where
+    exampleTest Example{example, valid, reason} =
+        if valid
+        then
+            [ testCase ("Ensure valid " ++ name) (assert (isValid example))
+            , testCase ("doubleCanonicalize test " ++ name) (assert (case emailAddress example of { Just ok -> prop_doubleCanonicalize ok; Nothing -> False }))
             ]
-       ]
+        else
+            [ testCase ("Ensure invalid " ++ name) (assert (not (isValid example))) ]
+
+        where name = show example ++ (if null reason then "" else " (" ++ reason ++ ")")
+
+showAndRead =
+    testGroup "EmailAddress Show/Read instances"
+    [ testProperty "showLikeByteString" prop_showLikeByteString
+    , testProperty "showAndReadBackWithoutQuoteFails" prop_showAndReadBackWithoutQuoteFails
+    , testProperty "showAndReadBack" prop_showAndReadBack
+    ]
+
+specificFailures =
+    testGroup "Specifics"
+    [ testCase "Issue #12" (let (Right em) = validate (BS.pack "\"\"@1") in em @?= read (show em))
+    , testCase "Check canonicalization of trailing dot" (canonicalizeEmail "foo@bar.com." @?= Just "foo@bar.com")
+    ]
+
+simpleAccessors = 
+    testGroup "Simple accessors"
+    [ testCase "local-part" (localPart (unsafeEmailAddress "local" undefined) @?= "local")
+    , testCase "domain-part" (domainPart (unsafeEmailAddress undefined "domain") @?= "domain")
+    ]
 
 instance Arbitrary ByteString where
     arbitrary = fmap BS.pack arbitrary
 
 instance Arbitrary EmailAddress where
     arbitrary = do
-        local <- suchThat arbitrary (\x -> isEmail x (BS.pack "example.com"))
-        domain <- suchThat arbitrary (isEmail (BS.pack "example"))
-        let email = makeEmailLike local domain
-        let (Just result) = emailAddress email
-        return result
+        local <- suchThat arbitrary (\l -> isEmail l (BS.pack "example.com"))
+        domain <- suchThat arbitrary (\d -> isEmail (BS.pack "example") d)
+        let (Just result) = emailAddress (makeEmailLike local domain)
+        pure result
 
-isEmail :: ByteString -> ByteString -> Bool
-isEmail l d = isValid (makeEmailLike l d)
+        where
+        isEmail l d = isValid (makeEmailLike l d)
+        makeEmailLike l d = BS.concat [l, BS.singleton '@', d]
 
-makeEmailLike :: ByteString -> ByteString -> ByteString
-makeEmailLike l d = BS.concat [l, BS.singleton '@', d]
+{- Properties -}
 
 prop_doubleCanonicalize :: EmailAddress -> Bool
 prop_doubleCanonicalize email =  Just email == emailAddress (toByteString email)
@@ -68,21 +103,23 @@ prop_showLikeByteString email = show (toByteString email) == show email
 prop_showAndReadBack :: EmailAddress -> Bool
 prop_showAndReadBack email = read (show email) == email
 
-readMaybe :: String -> Maybe EmailAddress
-readMaybe s = case reads s of
-              [(x, "")] -> Just x
-              _ -> Nothing
-
 prop_showAndReadBackWithoutQuoteFails :: EmailAddress -> Bool
 prop_showAndReadBackWithoutQuoteFails email =
-    readMaybe (init s) == Nothing &&
-    readMaybe (tail s) == Nothing
-    where s = show email
+    isNothing (readMaybe (init s)) && isNothing (readMaybe (tail s))
+    where
+    s = show email
+    readMaybe :: String -> Maybe EmailAddress
+    readMaybe s = case reads s of
+                [(x, "")] -> Just x
+                _ -> Nothing
 
---unitTest (x, y, z) = if not (isValid (BS.pack x) == y) then "" else (x ++" became "++ (case emailAddress (BS.pack x) of {Nothing -> "fail"; Just em -> show em}) ++": Should be "++show y ++", got "++show (not y)++"\n\t"++z++"\n")
+{- Examples -}
 
-units :: [(ByteString, Bool, String)]
-units =
+data Example = Example { example :: ByteString, valid :: Bool, reason :: String }
+
+examples :: [Example]
+examples =
+    map (\(e, v, r) -> Example e v r)
     [ ("first.last@example.com", True, "")
     , ("first.last@example.com.", True, "Dot allowed on end of domain")
     , ("local@exam_ple.com", False, "Underscore not permitted in domain")
