@@ -31,7 +31,6 @@ library
     hs-source-dirs: src
     ghc-options: -Wall
     exposed-modules:
-        Text.Domain.Parser,
         Text.Email.QuasiQuotation,
         Text.Email.Validate,
         Text.Email.Parser

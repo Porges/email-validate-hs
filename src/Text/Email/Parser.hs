@@ -19,8 +19,6 @@ import           Data.Data (Data, Typeable)
 import           GHC.Generics (Generic)
 import qualified Text.Read as Read
 
-import           Text.Domain.Parser (domainParser)
-
 -- | Represents an email address.
 data EmailAddress = EmailAddress ByteString ByteString
     deriving (Eq, Ord, Data, Typeable, Generic)
