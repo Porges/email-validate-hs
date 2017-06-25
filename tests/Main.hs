@@ -4,17 +4,16 @@
 
 module Main where
 
+import Control.Exception (evaluate)
+import Control.Monad (forM_)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
-import Data.Maybe (Maybe(..), isNothing)
+import Data.Maybe (Maybe(..), isNothing, fromJust)
 
-import Test.Framework as TF (defaultMain, testGroup, Test)
-import Test.Framework.Providers.HUnit (testCase)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
+import Test.Hspec (hspec, context, describe, errorCall, it, parallel, shouldBe)
+import Test.QuickCheck (Arbitrary(..), suchThat, property)
 
-import Test.HUnit ((@?=), assert)
-import Test.QuickCheck (Arbitrary(..), suchThat)
-
+import Text.Email.QuasiQuotation (email)
 import Text.Email.Validate
     ( EmailAddress
     , canonicalizeEmail
@@ -27,65 +26,74 @@ import Text.Email.Validate
     , unsafeEmailAddress
     )
 
-import Text.Email.QuasiQuotation (email)
 
 main :: IO ()
-main = defaultMain testGroups
+main = hspec $ parallel $ do
 
-{- Tests -}
-
-testGroups :: [Test]
-testGroups =
-    [ showAndRead
-    , canonicalization
-    , exampleTests
-    , specificFailures
-    , simpleAccessors
-    , quasiQuotationTests
-    ]
+    showAndRead
+    canonicalization
+    exampleTests
+    specificFailures
+    simpleAccessors
+    quasiQuotationTests
 
 canonicalization =
-    testGroup "QuickCheck Text.Email.Validate"
-    [ testProperty "doubleCanonicalize" prop_doubleCanonicalize
-    ]
+    describe "emailAddress" $ do
+        it "is idempotent" $
+            property prop_doubleCanonicalize
 
 exampleTests =
-    testGroup "Unit tests Text.Email.Validate" (concatMap exampleTest examples)
-    where
-    exampleTest Example{example, valid, reason} =
-        if valid
-        then
-            [ testCase ("Ensure valid " ++ name) (assert (isValid example))
-            , testCase ("doubleCanonicalize test " ++ name) (assert (case emailAddress example of { Just ok -> prop_doubleCanonicalize ok; Nothing -> False }))
-            ]
-        else
-            [ testCase ("Ensure invalid " ++ name) (assert (not (isValid example))) ]
+    describe "Examples" $ do
+        forM_ examples $ \Example{example, valid, reason} -> do
+            context (show example ++ (if null reason then "" else " (" ++ reason ++ ")")) $ do
+                if valid
+                then do
+                    it "should be valid" $ 
+                        isValid example `shouldBe` True
 
-        where name = show example ++ (if null reason then "" else " (" ++ reason ++ ")")
+                    it "passes double-canonicalization test" $
+                        prop_doubleCanonicalize (fromJust (emailAddress example))
+
+                else do
+                    it "should be invalid" $
+                        isValid example `shouldBe` False
 
 showAndRead =
-    testGroup "EmailAddress Show/Read instances"
-    [ testProperty "showLikeByteString" prop_showLikeByteString
-    , testProperty "showAndReadBackWithoutQuoteFails" prop_showAndReadBackWithoutQuoteFails
-    , testProperty "showAndReadBack" prop_showAndReadBack
-    ]
+    describe "show/read instances" $ do
 
-specificFailures =
-    testGroup "Specifics"
-    [ testCase "Issue #12" (let (Right em) = validate (BS.pack "\"\"@1") in em @?= read (show em))
-    , testCase "Check canonicalization of trailing dot" (canonicalizeEmail "foo@bar.com." @?= Just "foo@bar.com")
-    ]
+        it "can roundtrip" $
+            property prop_showAndReadBack
 
-simpleAccessors = 
-    testGroup "Simple accessors"
-    [ testCase "local-part" (localPart (unsafeEmailAddress "local" undefined) @?= "local")
-    , testCase "domain-part" (domainPart (unsafeEmailAddress undefined "domain") @?= "domain")
-    ]
+        it "shows in the same way as ByteString" $
+            property prop_showLikeByteString
+
+        it "should fail if read back without a quote" $
+            property prop_showAndReadBackWithoutQuoteFails
+
+specificFailures = do
+    describe "GitHub issue #12" $ do
+        it "is fixed" $
+            let (Right em) = validate (BS.pack "\"\"@1") in
+            em `shouldBe` read (show em)
+
+    describe "Trailing dot" $ do
+        it "is canonicalized" $ 
+            canonicalizeEmail "foo@bar.com." `shouldBe` Just "foo@bar.com"
+
+simpleAccessors = do
+    describe "localPart" $
+        it "extracts local part" $
+            localPart (unsafeEmailAddress "local" undefined) `shouldBe` "local"
+
+
+    describe "domainPart" $
+        it "extracts domain part" $
+            domainPart (unsafeEmailAddress undefined "domain") `shouldBe` "domain"
 
 quasiQuotationTests =
-    testGroup "QuasiQuotation"
-    [ testCase "Equality" (Just [email|local@domain.com|] @?= emailAddress "local@domain.com")
-    ]
+    describe "QuasiQuoter" $ do
+        it "works as expected" $
+            [email|local@domain.com|] `shouldBe` unsafeEmailAddress "local" "domain.com"
 
 instance Arbitrary ByteString where
     arbitrary = fmap BS.pack arbitrary
