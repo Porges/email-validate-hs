@@ -1,4 +1,5 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main where
@@ -26,6 +27,8 @@ import Text.Email.Validate
     , unsafeEmailAddress
     )
 
+import Text.Email.QuasiQuotation (email)
+
 main :: IO ()
 main = defaultMain testGroups
 
@@ -38,6 +41,7 @@ testGroups =
     , exampleTests
     , specificFailures
     , simpleAccessors
+    , quasiQuotationTests
     ]
 
 canonicalization =
@@ -76,6 +80,11 @@ simpleAccessors =
     testGroup "Simple accessors"
     [ testCase "local-part" (localPart (unsafeEmailAddress "local" undefined) @?= "local")
     , testCase "domain-part" (domainPart (unsafeEmailAddress undefined "domain") @?= "domain")
+    ]
+
+quasiQuotationTests =
+    testGroup "QuasiQuotation"
+    [ testCase "Equality" (Just [email|local@domain.com|] @?= emailAddress "local@domain.com")
     ]
 
 instance Arbitrary ByteString where

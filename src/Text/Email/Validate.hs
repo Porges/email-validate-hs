@@ -1,21 +1,28 @@
 module Text.Email.Validate
-        ( isValid
-        , validate
-        , emailAddress
-        , canonicalizeEmail
-        , EmailAddress -- re-exported
-        , unsafeEmailAddress
-        , localPart
-        , domainPart
-        , toByteString
-        )
+    ( isValid
+    , validate
+    , emailAddress
+    , canonicalizeEmail
+
+    -- Re-exports:
+    , EmailAddress
+    , domainPart
+    , localPart
+    , toByteString
+    , unsafeEmailAddress
+    )
 where
 
-import           Data.Attoparsec.ByteString (endOfInput, parseOnly)
-import           Data.ByteString            (ByteString)
+import Data.Attoparsec.ByteString (endOfInput, parseOnly)
+import Data.ByteString (ByteString)
 
-import           Text.Email.Parser          (EmailAddress, addrSpec, domainPart,
-                                             localPart, toByteString, unsafeEmailAddress)
+import Text.Email.Parser
+    ( EmailAddress
+    , addrSpec
+    , domainPart
+    , localPart
+    , toByteString
+    , unsafeEmailAddress)
 
 -- | Smart constructor for an email address
 emailAddress :: ByteString -> Maybe EmailAddress
@@ -35,3 +42,4 @@ isValid = either (const False) (const True) . validate
 --   an email address, use this.
 validate :: ByteString -> Either String EmailAddress
 validate = parseOnly (addrSpec >>= \r -> endOfInput >> return r)
+
