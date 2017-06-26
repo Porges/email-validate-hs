@@ -1,21 +1,32 @@
 module Text.Email.Validate
-        ( isValid
-        , validate
-        , emailAddress
-        , canonicalizeEmail
-        , EmailAddress -- re-exported
-        , unsafeEmailAddress
-        , localPart
-        , domainPart
-        , toByteString
-        )
+    ( isValid
+    , validate
+    , emailAddress
+    , canonicalizeEmail
+
+    -- Re-exports:
+    , EmailAddress
+    , domainPart
+    , localPart
+    , toByteString
+    , unsafeEmailAddress
+    )
 where
 
-import           Data.Attoparsec.ByteString (endOfInput, parseOnly)
-import           Data.ByteString            (ByteString)
+import Data.Attoparsec.ByteString (endOfInput, parseOnly)
+import Data.ByteString (ByteString)
 
-import           Text.Email.Parser          (EmailAddress, addrSpec, domainPart,
-                                             localPart, toByteString, unsafeEmailAddress)
+import Text.Email.Parser
+    ( EmailAddress
+    , addrSpec
+    , domainPart
+    , localPart
+    , toByteString
+    , unsafeEmailAddress)
+
+-- $setup
+-- This is required for all examples:
+-- >>> :set -XOverloadedStrings
 
 -- | Smart constructor for an email address
 emailAddress :: ByteString -> Maybe EmailAddress
@@ -23,6 +34,10 @@ emailAddress = either (const Nothing) Just . validate
 
 -- | Checks that an email is valid and returns a version of it
 --   where comments and whitespace have been removed.
+--
+-- Example:
+-- >>> canonicalizeEmail "spaces. are. allowed@example.com"
+-- Just "spaces.are.allowed@example.com"
 canonicalizeEmail :: ByteString -> Maybe ByteString
 canonicalizeEmail = fmap toByteString . emailAddress
 
@@ -33,5 +48,12 @@ isValid = either (const False) (const True) . validate
 
 -- | If you want to find out *why* a particular string is not
 --   an email address, use this.
+--
+-- Examples:
+-- >>> validate "example@example.com"
+-- Right "example@example.com"
+-- >>> validate "not.good"
+-- Left "at sign > @: not enough input"
 validate :: ByteString -> Either String EmailAddress
 validate = parseOnly (addrSpec >>= \r -> endOfInput >> return r)
+

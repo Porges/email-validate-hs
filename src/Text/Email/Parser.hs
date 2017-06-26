@@ -11,15 +11,13 @@ module Text.Email.Parser
 where
 
 import           Control.Applicative
-import           Control.Monad (void)
+import           Control.Monad (guard, void, when)
 import           Data.Attoparsec.ByteString.Char8
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Data (Data, Typeable)
 import           GHC.Generics (Generic)
 import qualified Text.Read as Read
-
-import           Text.Domain.Parser (domainParser)
 
 -- | Represents an email address.
 data EmailAddress = EmailAddress ByteString ByteString
@@ -57,7 +55,19 @@ domainPart (EmailAddress _ d) = d
 
 -- | A parser for email addresses.
 addrSpec :: Parser EmailAddress
-addrSpec = unsafeEmailAddress <$> local <* char '@' <*> domain
+addrSpec = do
+    l <- local
+
+    -- Maximum length of local-part is 64, per RFC3696
+    when (BS.length l > 64) (fail "local-part of email is too long (more than 64 octets)")
+
+    _ <- char '@' <?> "at sign"
+    d <- domain
+
+    -- Maximum length is 254, per Erratum 1690 on RFC3696
+    when (BS.length l + BS.length d + 1 > 254) (fail "email address is too long (more than 254 octets)")
+
+    return (unsafeEmailAddress l d)
 
 local :: Parser ByteString
 local = dottedAtoms
@@ -67,10 +77,28 @@ domain = domainName <|> domainLiteral
 
 domainName :: Parser ByteString
 domainName = do
-    raw <- BS.append <$> dottedAtoms <*> option BS.empty (string (BS.pack "."))
-    case parseOnly (domainParser <* endOfInput) raw of
-        Left err -> fail err
-        Right result -> return result
+    parsedDomain <- BS.intercalate (BS.singleton '.') <$>
+        domainLabel `sepBy1` char '.' <* optional (char '.')
+
+    -- Domain name must be no greater than 253 chars, per RFC1035
+    guard (BS.length parsedDomain <= 253)
+    return parsedDomain
+
+domainLabel :: Parser ByteString
+domainLabel = do
+    content <- between1 (optional cfws) (fst <$> match (alphaNum >> skipWhile isAlphaNumHyphen))
+
+    -- Per RFC1035:
+    -- label must be no greater than 63 chars and cannot end with '-'
+    -- (we already enforced that it does not start with '-')
+    guard (BS.length content <= 63 && BS.last content /= '-')
+    return content
+
+alphaNum :: Parser Char
+alphaNum = satisfy isAlphaNum
+
+isAlphaNumHyphen :: Char -> Bool
+isAlphaNumHyphen x = isDigit x || isAlpha_ascii x || x == '-'
 
 dottedAtoms :: Parser ByteString
 dottedAtoms = BS.intercalate (BS.singleton '.') <$>

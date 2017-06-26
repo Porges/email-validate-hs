@@ -1,19 +1,21 @@
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Main where
 
+import Control.Exception (evaluate)
+import Control.Monad (forM_)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
-import Data.Maybe (Maybe(..), isNothing)
+import Data.List (isInfixOf)
+import Data.Maybe (Maybe(..), isNothing, fromJust)
+import Data.Monoid ((<>))
 
-import Test.Framework as TF (defaultMain, testGroup, Test)
-import Test.Framework.Providers.HUnit (testCase)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
+import Test.Hspec (hspec, context, describe, errorCall, it, parallel, shouldBe, shouldSatisfy)
+import Test.QuickCheck (Arbitrary(..), suchThat, property)
 
-import Test.HUnit ((@?=), assert)
-import Test.QuickCheck (Arbitrary(..), suchThat)
-
+import Text.Email.QuasiQuotation (email)
 import Text.Email.Validate
     ( EmailAddress
     , canonicalizeEmail
@@ -27,56 +29,78 @@ import Text.Email.Validate
     )
 
 main :: IO ()
-main = defaultMain testGroups
+main = hspec $ parallel $ do
 
-{- Tests -}
-
-testGroups :: [Test]
-testGroups =
-    [ showAndRead
-    , canonicalization
-    , exampleTests
-    , specificFailures
-    , simpleAccessors
-    ]
+    showAndRead
+    canonicalization
+    exampleTests
+    specificFailures
+    simpleAccessors
+    quasiQuotationTests
 
 canonicalization =
-    testGroup "QuickCheck Text.Email.Validate"
-    [ testProperty "doubleCanonicalize" prop_doubleCanonicalize
-    ]
+    describe "emailAddress" $ do
+        it "is idempotent" $
+            property prop_doubleCanonicalize
 
 exampleTests =
-    testGroup "Unit tests Text.Email.Validate" (concatMap exampleTest examples)
-    where
-    exampleTest Example{example, valid, reason} =
-        if valid
-        then
-            [ testCase ("Ensure valid " ++ name) (assert (isValid example))
-            , testCase ("doubleCanonicalize test " ++ name) (assert (case emailAddress example of { Just ok -> prop_doubleCanonicalize ok; Nothing -> False }))
-            ]
-        else
-            [ testCase ("Ensure invalid " ++ name) (assert (not (isValid example))) ]
+    describe "Examples" $ do
+        forM_ examples $ \Example{example, exampleValid, exampleWhy, errorContains} -> do
+            context (show example ++ (if null exampleWhy then "" else " (" ++ exampleWhy ++ ")")) $ do
+                if exampleValid
+                then do
+                    it "should be valid" $ 
+                        isValid example `shouldBe` True
 
-        where name = show example ++ (if null reason then "" else " (" ++ reason ++ ")")
+                    it "passes double-canonicalization test" $
+                        prop_doubleCanonicalize (fromJust (emailAddress example))
+
+                else do
+                    it "should be invalid" $
+                        isValid example `shouldBe` False
+
+                    case (errorContains, validate example) of
+                        (Just err, Left errMessage) ->
+                            it "should have correct error message" $
+                                errMessage `shouldSatisfy` (err `isInfixOf`)
+                        (_, _) -> return ()
 
 showAndRead =
-    testGroup "EmailAddress Show/Read instances"
-    [ testProperty "showLikeByteString" prop_showLikeByteString
-    , testProperty "showAndReadBackWithoutQuoteFails" prop_showAndReadBackWithoutQuoteFails
-    , testProperty "showAndReadBack" prop_showAndReadBack
-    ]
+    describe "show/read instances" $ do
 
-specificFailures =
-    testGroup "Specifics"
-    [ testCase "Issue #12" (let (Right em) = validate (BS.pack "\"\"@1") in em @?= read (show em))
-    , testCase "Check canonicalization of trailing dot" (canonicalizeEmail "foo@bar.com." @?= Just "foo@bar.com")
-    ]
+        it "can roundtrip" $
+            property prop_showAndReadBack
 
-simpleAccessors = 
-    testGroup "Simple accessors"
-    [ testCase "local-part" (localPart (unsafeEmailAddress "local" undefined) @?= "local")
-    , testCase "domain-part" (domainPart (unsafeEmailAddress undefined "domain") @?= "domain")
-    ]
+        it "shows in the same way as ByteString" $
+            property prop_showLikeByteString
+
+        it "should fail if read back without a quote" $
+            property prop_showAndReadBackWithoutQuoteFails
+
+specificFailures = do
+    describe "GitHub issue #12" $ do
+        it "is fixed" $
+            let (Right em) = validate (BS.pack "\"\"@1") in
+            em `shouldBe` read (show em)
+
+    describe "Trailing dot" $ do
+        it "is canonicalized" $ 
+            canonicalizeEmail "foo@bar.com." `shouldBe` Just "foo@bar.com"
+
+simpleAccessors = do
+    describe "localPart" $
+        it "extracts local part" $
+            localPart (unsafeEmailAddress "local" undefined) `shouldBe` "local"
+
+
+    describe "domainPart" $
+        it "extracts domain part" $
+            domainPart (unsafeEmailAddress undefined "domain") `shouldBe` "domain"
+
+quasiQuotationTests =
+    describe "QuasiQuoter" $ do
+        it "works as expected" $
+            [email|local@domain.com|] `shouldBe` unsafeEmailAddress "local" "domain.com"
 
 instance Arbitrary ByteString where
     arbitrary = fmap BS.pack arbitrary
@@ -115,241 +139,262 @@ prop_showAndReadBackWithoutQuoteFails email =
 
 {- Examples -}
 
-data Example = Example { example :: ByteString, valid :: Bool, reason :: String }
+data Example = Example
+    { example :: ByteString
+    , exampleValid :: Bool
+    , exampleWhy :: String
+    , errorContains :: Maybe String }
+
+valid, invalid :: ByteString -> Example
+valid e = Example e True "" Nothing
+invalid e = Example e False "" Nothing
+
+why :: Example -> String -> Example
+why ex str = ex { exampleWhy = str }
+
+errorShouldContain :: Example -> String -> Example
+errorShouldContain ex str = ex { errorContains = Just str }
+
 
 examples :: [Example]
 examples =
-    map (\(e, v, r) -> Example e v r)
-    [ ("first.last@example.com", True, "")
-    , ("first.last@example.com.", True, "Dot allowed on end of domain")
-    , ("local@exam_ple.com", False, "Underscore not permitted in domain")
-    , ("1234567890123456789012345678901234567890123456789012345678901234@example.com", True, "")
-    , ("\"first last\"@example.com", True, "")
-    , ("\"first\\\"last\"@example.com", True, "")
-    , ("first\\@last@example.com", False, "Escaping can only happen within a quoted string")
-    , ("\"first@last\"@example.com", True, "")
-    , ("\"first\\\\last\"@example.com", True, "")
-    , ("x@x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23", True, "Max length is 253")
-    , ("x@x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23.", True, "Trailing dot doesn't increase length")
-    , ("x@x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x234", False, "Max length is 253")
-    , ("123456789012345678901234567890123456789012345678901234567890@12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.123456789012345678901234567890123456789012345678901234567890123.example.com", True, "")
-    , ("first.last@[12.34.56.78]", True, "")
-    , ("first.last@[IPv6:::12.34.56.78]", True, "")
-    , ("first.last@[IPv6:1111:2222:3333::4444:12.34.56.78]", True, "")
-    , ("first.last@[IPv6:1111:2222:3333:4444:5555:6666:12.34.56.78]", True, "")
-    , ("first.last@[IPv6:::1111:2222:3333:4444:5555:6666]", True, "")
-    , ("first.last@[IPv6:1111:2222:3333::4444:5555:6666]", True, "")
-    , ("first.last@[IPv6:1111:2222:3333:4444:5555:6666::]", True, "")
-    , ("first.last@[IPv6:1111:2222:3333:4444:5555:6666:7777:8888]", True, "")
-    , ("first.last@x23456789012345678901234567890123456789012345678901234567890123.example.com", True, "")
-    , ("first.last@1xample.com", True, "")
-    , ("first.last@123.example.com", True, "")
-    , ("first.last", False, "No @")
-    , (".first.last@example.com", False, "Local part starts with a dot")
-    , ("first.last.@example.com", False, "Local part ends with a dot")
-    , ("first..last@example.com", False, "Local part has consecutive dots")
-    , ("\"first\"last\"@example.com", False, "Local part contains unescaped excluded characters")
-    , ("\"first\\last\"@example.com", True, "Any character can be escaped in a quoted string")
-    , ("\"\"\"@example.com", False, "Local part contains unescaped excluded characters")
-    , ("\"\\\"@example.com", False, "Local part cannot end with a backslash")
-    , ("first\\\\@last@example.com", False, "Local part contains unescaped excluded characters")
-    , ("first.last@", False, "No domain")
-    , ("\"Abc\\@def\"@example.com", True, "")
-    , ("\"Fred\\ Bloggs\"@example.com", True, "")
-    , ("\"Joe.\\\\Blow\"@example.com", True, "")
-    , ("\"Abc@def\"@example.com", True, "")
-    , ("\"Fred Bloggs\"@example.com", True, "")
-    , ("user+mailbox@example.com", True, "")
-    , ("customer/department=shipping@example.com", True, "")
-    , ("$A12345@example.com", True, "")
-    , ("!def!xyz%abc@example.com", True, "")
-    , ("_somename@example.com", True, "")
-    , ("dclo@us.ibm.com", True, "")
-    , ("abc\\@def@example.com", False, "This example from RFC3696 was corrected in an erratum")
-    , ("abc\\\\@example.com", False, "This example from RFC3696 was corrected in an erratum")
-    , ("peter.piper@example.com", True, "")
-    , ("Doug\\ \\\"Ace\\\"\\ Lovell@example.com", False, "Escaping can only happen in a quoted string")
-    , ("\"Doug \\\"Ace\\\" L.\"@example.com", True, "")
-    , ("abc@def@example.com", False, "Doug Lovell says this should fail")
-    , ("abc\\\\@def@example.com", False, "Doug Lovell says this should fail")
-    , ("abc\\@example.com", False, "Doug Lovell says this should fail")
-    , ("@example.com", False, "No local part")
-    , ("doug@", False, "Doug Lovell says this should fail")
-    , ("\"qu@example.com", False, "Doug Lovell says this should fail")
-    , ("ote\"@example.com", False, "Doug Lovell says this should fail")
-    , (".dot@example.com", False, "Doug Lovell says this should fail")
-    , ("dot.@example.com", False, "Doug Lovell says this should fail")
-    , ("two..dot@example.com", False, "Doug Lovell says this should fail")
-    , ("\"Doug \"Ace\" L.\"@example.com", False, "Doug Lovell says this should fail")
-    , ("Doug\\ \\\"Ace\\\"\\ L\\.@example.com", False, "Doug Lovell says this should fail")
-    , ("hello world@example.com", False, "Doug Lovell says this should fail")
-    , ("gatsby@f.sc.ot.t.f.i.tzg.era.l.d.", True, "")
-    , ("test@example.com", True, "")
-    , ("TEST@example.com", True, "")
-    , ("1234567890@example.com", True, "")
-    , ("test+test@example.com", True, "")
-    , ("test-test@example.com", True, "")
-    , ("t*est@example.com", True, "")
-    , ("+1~1+@example.com", True, "")
-    , ("{_test_}@example.com", True, "")
-    , ("\"[[ test ]]\"@example.com", True, "")
-    , ("test.test@example.com", True, "")
-    , ("\"test.test\"@example.com", True, "")
-    , ("test.\"test\"@example.com", True, "Obsolete form, but documented in RFC2822")
-    , ("\"test@test\"@example.com", True, "")
-    , ("test@123.123.123.x123", True, "")
-    , ("test@[123.123.123.123]", True, "")
-    , ("test@example.example.com", True, "")
-    , ("test@example.example.example.com", True, "")
-    , ("test.example.com", False, "")
-    , ("test.@example.com", False, "")
-    , ("test..test@example.com", False, "")
-    , (".test@example.com", False, "")
-    , ("test@test@example.com", False, "")
-    , ("test@@example.com", False, "")
-    , ("-- test --@example.com", False, "No spaces allowed in local part")
-    , ("[test]@example.com", False, "Square brackets only allowed within quotes")
-    , ("\"test\\test\"@example.com", True, "Any character can be escaped in a quoted string")
-    , ("\"test\"test\"@example.com", False, "Quotes cannot be nested")
-    , ("()[]\\;:,><@example.com", False, "Disallowed Characters")
-    , ("test@.", False, "Dave Child says so")
-    , ("test@example.", True, "")
-    , ("test@.org", False, "Dave Child says so")
-    , ("test@[123.123.123.123", False, "Dave Child says so")
-    , ("test@123.123.123.123]", False, "Dave Child says so")
-    , ("NotAnEmail", False, "Phil Haack says so")
-    , ("@NotAnEmail", False, "Phil Haack says so")
-    , ("\"test\\\\blah\"@example.com", True, "")
-    , ("\"test\\blah\"@example.com", True, "Any character can be escaped in a quoted string")
-    , ("\"test\\\rblah\"@example.com", True, "Quoted string specifically excludes carriage returns unless escaped")
-    , ("\"test\rblah\"@example.com", False, "Quoted string specifically excludes carriage returns")
-    , ("\"test\\\"blah\"@example.com", True, "")
-    , ("\"test\"blah\"@example.com", False, "Phil Haack says so")
-    , ("customer/department@example.com", True, "")
-    , ("_Yosemite.Sam@example.com", True, "")
-    , ("~@example.com", True, "")
-    , (".wooly@example.com", False, "Phil Haack says so")
-    , ("wo..oly@example.com", False, "Phil Haack says so")
-    , ("pootietang.@example.com", False, "Phil Haack says so")
-    , (".@example.com", False, "Phil Haack says so")
-    , ("\"Austin@Powers\"@example.com", True, "")
-    , ("Ima.Fool@example.com", True, "")
-    , ("\"Ima.Fool\"@example.com", True, "")
-    , ("\"Ima Fool\"@example.com", True, "")
-    , ("Ima Fool@example.com", False, "Phil Haack says so")
-    , ("phil.h\\@\\@ck@haacked.com", False, "Escaping can only happen in a quoted string")
-    , ("\"first\".\"last\"@example.com", True, "")
-    , ("\"first\".middle.\"last\"@example.com", True, "")
-    , ("\"first\\\\\"last\"@example.com", False, "Contains an unescaped quote")
-    , ("\"first\".last@example.com", True, "obs-local-part form as described in RFC 2822")
-    , ("first.\"last\"@example.com", True, "obs-local-part form as described in RFC 2822")
-    , ("\"first\".\"middle\".\"last\"@example.com", True, "obs-local-part form as described in RFC 2822")
-    , ("\"first.middle\".\"last\"@example.com", True, "obs-local-part form as described in RFC 2822")
-    , ("\"first.middle.last\"@example.com", True, "obs-local-part form as described in RFC 2822")
-    , ("\"first..last\"@example.com", True, "obs-local-part form as described in RFC 2822")
-    , ("foo@[\\1.2.3.4]", False, "RFC 5321 specifies the syntax for address-literal and does not allow escaping")
-    , ("\"first\\\\\\\"last\"@example.com", True, "")
-    , ("first.\"mid\\dle\".\"last\"@example.com", True, "Backslash can escape anything but must escape something")
-    , ("Test.\r\n Folding.\r\n Whitespace@example.com", True, "")
-    , ("first\\last@example.com", False, "Unquoted string must be an atom")
-    , ("Abc\\@def@example.com", False, "Was incorrectly given as a valid address in the original RFC3696")
-    , ("Fred\\ Bloggs@example.com", False, "Was incorrectly given as a valid address in the original RFC3696")
-    , ("Joe.\\\\Blow@example.com", False, "Was incorrectly given as a valid address in the original RFC3696")
-    , ("\"test\\\r\n blah\"@example.com", False, "Folding white space can\'t appear within a quoted pair")
-    , ("\"test\r\n blah\"@example.com", True, "This is a valid quoted string with folding white space")
-    , ("{^c\\@**Dog^}@cartoon.com", False, "This is a throwaway example from Doug Lovell\'s article. Actually it\'s not a valid address.")
-    , ("(foo)cal(bar)@(baz)iamcal.com(quux)", True, "A valid address containing comments")
-    , ("cal@iamcal(woo).(yay)com", True, "A valid address containing comments")
-    , ("cal(woo(yay)hoopla)@iamcal.com", True, "A valid address containing comments")
-    , ("cal(foo\\@bar)@iamcal.com", True, "A valid address containing comments")
-    , ("cal(foo\\)bar)@iamcal.com", True, "A valid address containing comments and an escaped parenthesis")
-    , ("cal(foo(bar)@iamcal.com", False, "Unclosed parenthesis in comment")
-    , ("cal(foo)bar)@iamcal.com", False, "Too many closing parentheses")
-    , ("cal(foo\\)@iamcal.com", False, "Backslash at end of comment has nothing to escape")
-    , ("first().last@example.com", True, "A valid address containing an empty comment")
-    , ("first.(\r\n middle\r\n )last@example.com", True, "Comment with folding white space")
-    , ("first(12345678901234567890123456789012345678901234567890)last@(1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890)example.com", False, "Too long with comments, not too long without")
-    , ("first(Welcome to\r\n the (\"wonderful\" (!)) world\r\n of email)@example.com", True, "Silly example from my blog post")
-    , ("pete(his account)@silly.test(his host)", True, "Canonical example from RFC5322")
-    , ("c@(Chris\'s host.)public.example", True, "Canonical example from RFC5322")
-    , ("jdoe@machine(comment).  example", True, "Canonical example from RFC5322")
-    , ("1234   @   local(blah)  .machine .example", True, "Canonical example from RFC5322")
-    , ("first(middle)last@example.com", False, "Can\'t have a comment or white space except at an element boundary")
-    , ("first(abc.def).last@example.com", True, "Comment can contain a dot")
-    , ("first(a\"bc.def).last@example.com", True, "Comment can contain double quote")
-    , ("first.(\")middle.last(\")@example.com", True, "Comment can contain a quote")
-    , ("first(abc(\"def\".ghi).mno)middle(abc(\"def\".ghi).mno).last@(abc(\"def\".ghi).mno)example(abc(\"def\".ghi).mno).(abc(\"def\".ghi).mno)com(abc(\"def\".ghi).mno)", False, "Can\'t have comments or white space except at an element boundary")
-    , ("first(abc\\(def)@example.com", True, "Comment can contain quoted-pair")
-    , ("first.last@x(1234567890123456789012345678901234567890123456789012345678901234567890).com", True, "Label is longer than 63 octets, but not with comment removed")
-    , ("a(a(b(c)d(e(f))g)h(i)j)@example.com", True, "")
-    , ("a(a(b(c)d(e(f))g)(h(i)j)@example.com", False, "Braces are not properly matched")
-    , ("name.lastname@domain.com", True, "")
-    , (".@", False, "")
-    , ("@bar.com", False, "")
-    , ("@@bar.com", False, "")
-    , ("a@bar.com", True, "")
-    , ("aaa.com", False, "")
-    , ("aaa@.com", False, "")
-    , ("aaa@.123", False, "")
-    , ("aaa@[123.123.123.123]", True, "")
-    , ("aaa@[123.123.123.123]a", False, "extra data outside ip")
-    , ("a@bar.com.", True, "")
-    , ("a-b@bar.com", True, "")
-    , ("+@b.c", True, "TLDs can be any length")
-    , ("+@b.com", True, "")
-    , ("-@..com", False, "")
-    , ("-@a..com", False, "")
-    , ("a@b.co-foo.uk", True, "")
-    , ("\"hello my name is\"@stutter.com", True, "")
-    , ("\"Test \\\"Fail\\\" Ing\"@example.com", True, "")
-    , ("valid@special.museum", True, "")
-    , ("shaitan@my-domain.thisisminekthx", True, "Disagree with Paul Gregg here")
-    , ("test@...........com", False, "......")
-    , ("\"Joe\\\\Blow\"@example.com", True, "")
-    , ("Invalid \\\n Folding \\\n Whitespace@example.com", False, "This isn\'t FWS so Dominic Sayers says it\'s invalid")
-    , ("HM2Kinsists@(that comments are allowed)this.is.ok", True, "")
-    , ("user%uucp!path@somehost.edu", True, "")
-    , ("\"first(last)\"@example.com", True, "")
-    , (" \r\n (\r\n x \r\n ) \r\n first\r\n ( \r\n x\r\n ) \r\n .\r\n ( \r\n x) \r\n last \r\n (  x \r\n ) \r\n @example.com", True, "")
-    , ("test.\r\n \r\n obs@syntax.com", True, "obs-fws allows multiple lines")
-    , ("test. \r\n \r\n obs@syntax.com", True, "obs-fws allows multiple lines (test 2: space before break)")
-    , ("test.\r\n\r\n obs@syntax.com", False, "obs-fws must have at least one WSP per line")
-    , ("\"null \\\0\"@char.com", True, "can have escaped null character")
-    , ("\"null \0\"@char.com", False, "cannot have unescaped null character")
+    let domain249 = BS.intercalate "." (take 25 (repeat (BS.replicate 9 'x'))) in
+    [ valid "first.last@example.com"
+    , valid "first.last@example.com." `why` "Dot allowed on end of domain"
+    , invalid "local@exam_ple.com" `why` "Underscore not permitted in domain"
+    , valid "1234567890123456789012345678901234567890123456789012345678901234@example.com"
+    , valid "\"first last\"@example.com" `why` "Contains quoted spaces"
+    , valid "\"first\\\"last\"@example.com" `why` "Contains quoted escaped quote"
+    , invalid "first\\@last@example.com" `why` "Escaping can only happen within a quoted string"
+    , valid "\"first@last\"@example.com" `why` "Contains quoted at-sign"
+    , valid "\"first\\\\last\"@example.com" `why` "Contains quoted escaped backslash"
+    , valid ("1234@" <> domain249)
+        `why` "Maximum length is 254, this is 254 exactly"
+    , valid ("1234@" <> domain249 <> ".")
+        `why` "Trailing dot doesn't increase length"
+    , invalid ("12345@" <> domain249)
+        `why` "Maximum length is 254, this is 255"
+        `errorShouldContain` "too long"
+    , valid "first.last@[12.34.56.78]" `why` "IP address"
+    , valid "first.last@[IPv6:::12.34.56.78]" `why` "IPv6 address"
+    , valid "first.last@[IPv6:1111:2222:3333::4444:12.34.56.78]"
+    , valid "first.last@[IPv6:1111:2222:3333:4444:5555:6666:12.34.56.78]"
+    , valid "first.last@[IPv6:::1111:2222:3333:4444:5555:6666]"
+    , valid "first.last@[IPv6:1111:2222:3333::4444:5555:6666]"
+    , valid "first.last@[IPv6:1111:2222:3333:4444:5555:6666::]"
+    , valid "first.last@[IPv6:1111:2222:3333:4444:5555:6666:7777:8888]"
+    , valid "first.last@x23456789012345678901234567890123456789012345678901234567890123.example.com"
+    , valid "first.last@1xample.com"
+    , valid "first.last@123.example.com"
+    , invalid "first.last" `why` "no at sign" `errorShouldContain` "at sign"
+    , invalid ".first.last@example.com" `why` "Local part starts with a dot"
+    , invalid "first.last.@example.com" `why` "Local part ends with a dot"
+    , invalid "first..last@example.com" `why` "Local part has consecutive dots"
+    , invalid "\"first\"last\"@example.com" `why` "Local part contains unescaped excluded characters"
+    , valid "\"first\\last\"@example.com" `why` "Any character can be escaped in a quoted string"
+    , invalid "\"\"\"@example.com" `why` "Local part contains unescaped excluded characters"
+    , invalid "\"\\\"@example.com" `why` "Local part cannot end with a backslash"
+    , invalid "first\\\\@last@example.com" `why` "Local part contains unescaped excluded characters"
+    , invalid "first.last@" `why` "No domain"
+    , valid "\"Abc\\@def\"@example.com"
+    , valid "\"Fred\\ Bloggs\"@example.com"
+    , valid "\"Joe.\\\\Blow\"@example.com"
+    , valid "\"Abc@def\"@example.com"
+    , valid "\"Fred Bloggs\"@example.com"
+    , valid "user+mailbox@example.com"
+    , valid "customer/department=shipping@example.com"
+    , valid "$A12345@example.com"
+    , valid "!def!xyz%abc@example.com"
+    , valid "_somename@example.com"
+    , valid "dclo@us.ibm.com"
+    , invalid "abc\\@def@example.com" `why` "This example from RFC3696 was corrected in an erratum"
+    , invalid "abc\\\\@example.com" `why` "This example from RFC3696 was corrected in an erratum"
+    , valid "peter.piper@example.com"
+    , invalid "Doug\\ \\\"Ace\\\"\\ Lovell@example.com" `why` "Escaping can only happen in a quoted string"
+    , valid "\"Doug \\\"Ace\\\" L.\"@example.com"
+    , invalid "abc@def@example.com" `why` "Doug Lovell says this should fail"
+    , invalid "abc\\\\@def@example.com" `why` "Doug Lovell says this should fail"
+    , invalid "abc\\@example.com" `why` "Doug Lovell says this should fail"
+    , invalid "@example.com" `why` "no local part"
+    , invalid "doug@" `why` "no domain part"
+    , invalid "\"qu@example.com" `why` "Doug Lovell says this should fail"
+    , invalid "ote\"@example.com" `why` "Doug Lovell says this should fail"
+    , invalid ".dot@example.com" `why` "Doug Lovell says this should fail"
+    , invalid "dot.@example.com" `why` "Doug Lovell says this should fail"
+    , invalid "two..dot@example.com" `why` "Doug Lovell says this should fail"
+    , invalid "\"Doug \"Ace\" L.\"@example.com" `why` "Doug Lovell says this should fail"
+    , invalid "Doug\\ \\\"Ace\\\"\\ L\\.@example.com" `why` "Doug Lovell says this should fail"
+    , invalid "hello world@example.com" `why` "Doug Lovell says this should fail"
+    , valid "gatsby@f.sc.ot.t.f.i.tzg.era.l.d."
+    , valid "test@example.com"
+    , valid "TEST@example.com"
+    , valid "1234567890@example.com"
+    , valid "test+test@example.com"
+    , valid "test-test@example.com"
+    , valid "t*est@example.com"
+    , valid "+1~1+@example.com"
+    , valid "{_test_}@example.com"
+    , valid "\"[[ test ]]\"@example.com"
+    , valid "test.test@example.com"
+    , valid "\"test.test\"@example.com"
+    , valid "test.\"test\"@example.com" `why` "Obsolete form, but documented in RFC2822"
+    , valid "\"test@test\"@example.com"
+    , valid "test@123.123.123.x123"
+    , valid "test@[123.123.123.123]"
+    , valid "test@example.example.com"
+    , valid "test@example.example.example.com"
+    , invalid "test.example.com"
+    , invalid "test.@example.com"
+    , invalid "test..test@example.com"
+    , invalid ".test@example.com"
+    , invalid "test@test@example.com"
+    , invalid "test@@example.com"
+    , invalid "-- test --@example.com" `why` "No spaces allowed in local part"
+    , invalid "[test]@example.com" `why` "Square brackets only allowed within quotes"
+    , valid "\"test\\test\"@example.com" `why` "Any character can be escaped in a quoted string"
+    , invalid "\"test\"test\"@example.com" `why` "Quotes cannot be nested"
+    , invalid "()[]\\;:,><@example.com" `why` "Disallowed Characters"
+    , invalid "test@." `why` "Dave Child says so"
+    , valid "test@example."
+    , invalid "test@.org" `why` "Dave Child says so"
+    , invalid "test@[123.123.123.123" `why` "Dave Child says so"
+    , invalid "test@123.123.123.123]" `why` "Dave Child says so"
+    , invalid "NotAnEmail" `why` "Phil Haack says so"
+    , invalid "@NotAnEmail" `why` "Phil Haack says so"
+    , valid "\"test\\\\blah\"@example.com"
+    , valid "\"test\\blah\"@example.com" `why` "Any character can be escaped in a quoted string"
+    , valid "\"test\\\rblah\"@example.com" `why` "Quoted string specifically excludes carriage returns unless escaped"
+    , invalid "\"test\rblah\"@example.com" `why` "Quoted string specifically excludes carriage returns"
+    , valid "\"test\\\"blah\"@example.com"
+    , invalid "\"test\"blah\"@example.com" `why` "Phil Haack says so"
+    , valid "customer/department@example.com"
+    , valid "_Yosemite.Sam@example.com"
+    , valid "~@example.com"
+    , invalid ".wooly@example.com" `why` "Phil Haack says so"
+    , invalid "wo..oly@example.com" `why` "Phil Haack says so"
+    , invalid "pootietang.@example.com" `why` "Phil Haack says so"
+    , invalid ".@example.com" `why` "Phil Haack says so"
+    , valid "\"Austin@Powers\"@example.com"
+    , valid "Ima.Fool@example.com"
+    , valid "\"Ima.Fool\"@example.com"
+    , valid "\"Ima Fool\"@example.com"
+    , invalid "Ima Fool@example.com" `why` "Phil Haack says so"
+    , invalid "phil.h\\@\\@ck@haacked.com" `why` "Escaping can only happen in a quoted string"
+    , valid "\"first\".\"last\"@example.com"
+    , valid "\"first\".middle.\"last\"@example.com"
+    , invalid "\"first\\\\\"last\"@example.com" `why` "Contains an unescaped quote"
+    , valid "\"first\".last@example.com" `why` "obs-local-part form as described in RFC 2822"
+    , valid "first.\"last\"@example.com" `why` "obs-local-part form as described in RFC 2822"
+    , valid "\"first\".\"middle\".\"last\"@example.com" `why` "obs-local-part form as described in RFC 2822"
+    , valid "\"first.middle\".\"last\"@example.com" `why` "obs-local-part form as described in RFC 2822"
+    , valid "\"first.middle.last\"@example.com" `why` "obs-local-part form as described in RFC 2822"
+    , valid "\"first..last\"@example.com" `why` "obs-local-part form as described in RFC 2822"
+    , invalid "foo@[\\1.2.3.4]" `why` "RFC 5321 specifies the syntax for address-literal and does not allow escaping"
+    , valid "\"first\\\\\\\"last\"@example.com"
+    , valid "first.\"mid\\dle\".\"last\"@example.com" `why` "Backslash can escape anything but must escape something"
+    , valid "Test.\r\n Folding.\r\n Whitespace@example.com"
+    , invalid "first\\last@example.com" `why` "Unquoted string must be an atom"
+    , invalid "Abc\\@def@example.com" `why` "Was incorrectly given as a valid address in the original RFC3696"
+    , invalid "Fred\\ Bloggs@example.com" `why` "Was incorrectly given as a valid address in the original RFC3696"
+    , invalid "Joe.\\\\Blow@example.com" `why` "Was incorrectly given as a valid address in the original RFC3696"
+    , invalid "\"test\\\r\n blah\"@example.com" `why` "Folding white space can\'t appear within a quoted pair"
+    , valid "\"test\r\n blah\"@example.com" `why` "This is a valid quoted string with folding white space"
+    , invalid "{^c\\@**Dog^}@cartoon.com" `why` "This is a throwaway example from Doug Lovell\'s article. Actually it\'s not a valid address."
+    , valid "(foo)cal(bar)@(baz)iamcal.com(quux)" `why` "A valid address containing comments"
+    , valid "cal@iamcal(woo).(yay)com" `why` "A valid address containing comments"
+    , valid "cal(woo(yay)hoopla)@iamcal.com" `why` "A valid address containing comments"
+    , valid "cal(foo\\@bar)@iamcal.com" `why` "A valid address containing comments"
+    , valid "cal(foo\\)bar)@iamcal.com" `why` "A valid address containing comments and an escaped parenthesis"
+    , invalid "cal(foo(bar)@iamcal.com" `why` "Unclosed parenthesis in comment"
+    , invalid "cal(foo)bar)@iamcal.com" `why` "Too many closing parentheses"
+    , invalid "cal(foo\\)@iamcal.com" `why` "Backslash at end of comment has nothing to escape"
+    , valid "first().last@example.com" `why` "A valid address containing an empty comment"
+    , valid "first.(\r\n middle\r\n )last@example.com" `why` "Comment with folding white space"
+    , invalid "first(12345678901234567890123456789012345678901234567890)last@(1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890)example.com" `why` "Too long with comments, not too long without"
+    , valid "first(Welcome to\r\n the (\"wonderful\" (!)) world\r\n of email)@example.com" `why` "Silly example from my blog post"
+    , valid "pete(his account)@silly.test(his host)" `why` "Canonical example from RFC5322"
+    , valid "c@(Chris\'s host.)public.example" `why` "Canonical example from RFC5322"
+    , valid "jdoe@machine(comment).  example" `why` "Canonical example from RFC5322"
+    , valid "1234   @   local(blah)  .machine .example" `why` "Canonical example from RFC5322"
+    , invalid "first(middle)last@example.com" `why` "Can\'t have a comment or white space except at an element boundary"
+    , valid "first(abc.def).last@example.com" `why` "Comment can contain a dot"
+    , valid "first(a\"bc.def).last@example.com" `why` "Comment can contain double quote"
+    , valid "first.(\")middle.last(\")@example.com" `why` "Comment can contain a quote"
+    , invalid "first(abc(\"def\".ghi).mno)middle(abc(\"def\".ghi).mno).last@(abc(\"def\".ghi).mno)example(abc(\"def\".ghi).mno).(abc(\"def\".ghi).mno)com(abc(\"def\".ghi).mno)" `why` "Can\'t have comments or white space except at an element boundary"
+    , valid "first(abc\\(def)@example.com" `why` "Comment can contain quoted-pair"
+    , valid "first.last@x(1234567890123456789012345678901234567890123456789012345678901234567890).com" `why` "Label is longer than 63 octets, but not with comment removed"
+    , valid "a(a(b(c)d(e(f))g)h(i)j)@example.com"
+    , invalid "a(a(b(c)d(e(f))g)(h(i)j)@example.com" `why` "Braces are not properly matched"
+    , valid "name.lastname@domain.com"
+    , invalid ".@"
+    , invalid "@bar.com"
+    , invalid "@@bar.com"
+    , valid "a@bar.com"
+    , invalid "aaa.com"
+    , invalid "aaa@.com"
+    , invalid "aaa@.123"
+    , valid "aaa@[123.123.123.123]"
+    , invalid "aaa@[123.123.123.123]a" `why` "extra data outside ip"
+    , valid "a@bar.com."
+    , valid "a-b@bar.com"
+    , valid "+@b.c" `why` "TLDs can be any length"
+    , valid "+@b.com"
+    , invalid "-@..com"
+    , invalid "-@a..com"
+    , valid "a@b.co-foo.uk"
+    , valid "\"hello my name is\"@stutter.com"
+    , valid "\"Test \\\"Fail\\\" Ing\"@example.com"
+    , valid "valid@special.museum"
+    , valid "shaitan@my-domain.thisisminekthx" `why` "Disagree with Paul Gregg here"
+    , invalid "test@...........com" `why` "......"
+    , valid "\"Joe\\\\Blow\"@example.com"
+    , invalid "Invalid \\\n Folding \\\n Whitespace@example.com" `why` "This isn\'t FWS so Dominic Sayers says it\'s invalid"
+    , valid "HM2Kinsists@(that comments are allowed)this.is.ok"
+    , valid "user%uucp!path@somehost.edu"
+    , valid "\"first(last)\"@example.com"
+    , valid " \r\n (\r\n x \r\n ) \r\n first\r\n ( \r\n x\r\n ) \r\n .\r\n ( \r\n x) \r\n last \r\n (  x \r\n ) \r\n @example.com"
+    , valid "test.\r\n \r\n obs@syntax.com" `why` "obs-fws allows multiple lines"
+    , valid "test. \r\n \r\n obs@syntax.com" `why` "obs-fws allows multiple lines (test 2: space before break)"
+    , invalid "test.\r\n\r\n obs@syntax.com" `why` "obs-fws must have at least one WSP per line"
+    , valid "\"null \\\0\"@char.com" `why` "can have escaped null character"
+    , invalid "\"null \0\"@char.com" `why` "cannot have unescaped null character"
     -- items below here are invalid according to other RFCs (or opinions)
-    --, ("\"\"@example.com", False, "Local part is effectively empty")
-    --, ("foobar@192.168.0.1", False, "ip need to be []")
-    --, ("first.last@[.12.34.56.78]", False, "Only char that can precede IPv4 address is \':\'")
-    --, ("first.last@[12.34.56.789]", False, "Can\'t be interpreted as IPv4 so IPv6 tag is missing")
-    --, ("first.last@[::12.34.56.78]", False, "IPv6 tag is missing")
-    --, ("first.last@[IPv5:::12.34.56.78]", False, "IPv6 tag is wrong")
-    --, ("first.last@[IPv6:1111:2222:3333::4444:5555:12.34.56.78]", False, "Too many IPv6 groups (4 max)")
-    --, ("first.last@[IPv6:1111:2222:3333:4444:5555:12.34.56.78]", False, "Not enough IPv6 groups")
-    --, ("first.last@[IPv6:1111:2222:3333:4444:5555:6666:7777:12.34.56.78]", False, "Too many IPv6 groups (6 max)")
-    --, ("first.last@[IPv6:1111:2222:3333:4444:5555:6666:7777]", False, "Not enough IPv6 groups")
-    --, ("first.last@[IPv6:1111:2222:3333:4444:5555:6666:7777:8888:9999]", False, "Too many IPv6 groups (8 max)")
-    --, ("first.last@[IPv6:1111:2222::3333::4444:5555:6666]", False, "Too many \'::\' (can be none or one)")
-    --, ("first.last@[IPv6:1111:2222:3333::4444:5555:6666:7777]", False, "Too many IPv6 groups (6 max)")
-    --, ("first.last@[IPv6:1111:2222:333x::4444:5555]", False, "x is not valid in an IPv6 address")
-    --, ("first.last@[IPv6:1111:2222:33333::4444:5555]", False, "33333 is not a valid group in an IPv6 address")
-    --, ("first.last@example.123", False, "TLD can\'t be all digits")
-    --, ("aaa@[123.123.123.333]", False, "not a valid IP")
-    --, ("first.last@[IPv6:1111:2222:3333:4444:5555:6666:12.34.567.89]", False, "IPv4 part contains an invalid octet")
-    --, ("a@b", False, "")
-    --, ("a@bar", False, "")
-    , ("invalid@special.museum-", False, "")
-    , ("a@-b.com", False, "")
-    , ("a@b-.com", False, "")
-    --, ("\"foo\"(yay)@(hoopla)[1.2.3.4]", False, "Address literal can\'t be commented (RFC5321)")
-    --, ("first.\"\".last@example.com", False, "Contains a zero-length element")
-    --, ("test@example", False, "Dave Child says so")
-    --, ("12345678901234567890123456789012345678901234567890123456789012345@example.com", False, "Local part more than 64 characters")
-    , ("x@x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456", False, "Domain exceeds 255 chars")
-    , ("test@123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012.com", False, "255 characters is maximum length for domain. This is 256.")
-    --, ("123456789012345678901234567890123456789012345678901234567890@12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.1234.example.com", False, "Entire address is longer than 256 characters")
-    --, ("test@123.123.123.123", False, "Top Level Domain won\'t be all-numeric (see RFC3696 Section 2). I disagree with Dave Child on this one.")
-    , ("first.last@x234567890123456789012345678901234567890123456789012345678901234.example.com", False, "Label can\'t be longer than 63 octets")
-    --, ("first.last@com", False, "Mail host must be second- or lower level")
-    , ("first.last@-xample.com", False, "Label can\'t begin with a hyphen")
-    , ("first.last@exampl-.com", False, "Label can\'t end with a hyphen")
+    --, invalid "\"\"@example.com" `why` "Local part is effectively empty"
+    --, invalid "foobar@192.168.0.1" `why` "ip need to be []"
+    --, invalid "first.last@[.12.34.56.78]" `why` "Only char that can precede IPv4 address is \':\'"
+    --, invalid "first.last@[12.34.56.789]" `why` "Can\'t be interpreted as IPv4 so IPv6 tag is missing"
+    --, invalid "first.last@[::12.34.56.78]" `why` "IPv6 tag is missing"
+    --, invalid "first.last@[IPv5:::12.34.56.78]" `why` "IPv6 tag is wrong"
+    --, invalid "first.last@[IPv6:1111:2222:3333::4444:5555:12.34.56.78]" `why` "Too many IPv6 groups (4 max)"
+    --, invalid "first.last@[IPv6:1111:2222:3333:4444:5555:12.34.56.78]" `why` "Not enough IPv6 groups"
+    --, invalid "first.last@[IPv6:1111:2222:3333:4444:5555:6666:7777:12.34.56.78]" `why` "Too many IPv6 groups (6 max)"
+    --, invalid "first.last@[IPv6:1111:2222:3333:4444:5555:6666:7777]" `why` "Not enough IPv6 groups"
+    --, invalid "first.last@[IPv6:1111:2222:3333:4444:5555:6666:7777:8888:9999]" `why` "Too many IPv6 groups (8 max)"
+    --, invalid "first.last@[IPv6:1111:2222::3333::4444:5555:6666]" `why` "Too many \'::\' (can be none or one)"
+    --, invalid "first.last@[IPv6:1111:2222:3333::4444:5555:6666:7777]" `why` "Too many IPv6 groups (6 max)"
+    --, invalid "first.last@[IPv6:1111:2222:333x::4444:5555]" `why` "x is not valid in an IPv6 address"
+    --, invalid "first.last@[IPv6:1111:2222:33333::4444:5555]" `why` "33333 is not a valid group in an IPv6 address"
+    --, invalid "first.last@example.123" `why` "TLD can\'t be all digits"
+    --, invalid "aaa@[123.123.123.333]" `why` "not a valid IP"
+    --, invalid "first.last@[IPv6:1111:2222:3333:4444:5555:6666:12.34.567.89]" `why` "IPv4 part contains an invalid octet"
+    , valid "a@b"
+    , valid "a@bar"
+    , invalid "invalid@special.museum-" `why` "domain can't end with hyphen"
+    , invalid "a@-b.com" `why` "domain can't start with hyphen"
+    , invalid "a@b-.com" `why` "domain label can't end with hyphen"
+    --, invalid "\"foo\"(yay)@(hoopla)[1.2.3.4]" `why` "Address literal can\'t be commented (RFC5321)"
+    --, invalid "first.\"\".last@example.com" `why` "Contains a zero-length element"
+    --, invalid "test@example" `why` "Dave Child says so"
+    , invalid (BS.replicate 65 'x' <> "@x") `why` "local-part longer than 64 octets" `errorShouldContain` "too long"
+    , invalid "x@x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456" `why` "Domain exceeds 255 chars"
+    , invalid "test@123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012.com" `why` "255 characters is maximum length for domain. This is 256."
+    , invalid "123456789012345678901234567890123456789012345678901234567890@12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.1234.example.com" `why` "Entire address is longer than 254 characters (this is 257)"
+    , invalid "123456789012345678901234567890123456789012345678901234567890@12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.123.example.com" `why` "Entire address is longer than 254 characters (this is 256)"
+    , invalid "123456789012345678901234567890123456789012345678901234567890@12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.12.example.com" `why` "Entire address is longer than 254 characters (this is 255)"
+    , valid "123456789012345678901234567890123456789012345678901234567890@12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.1.example.com" `why` "Entire address is 254 characters"
+    --, invalid "test@123.123.123.123" `why` "Top Level Domain won\'t be all-numeric (see RFC3696 Section 2). I disagree with Dave Child on this one."
+    , invalid "first.last@x234567890123456789012345678901234567890123456789012345678901234.example.com" `why` "Label can\'t be longer than 63 octets"
+    --, invalid "first.last@com" `why` "Mail host must be second- or lower level"
+    , invalid "first.last@e.-xample.com" `why` "Label can\'t begin with a hyphen"
+    , invalid "first.last@exampl-.e.com" `why` "Label can\'t end with a hyphen"
     ]
