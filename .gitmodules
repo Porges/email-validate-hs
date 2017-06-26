@@ -1,0 +1,3 @@
+[submodule "testdata/isemail"]
+	path = testdata/isemail
+	url = https://github.com/dominicsayers/isemail
