@@ -1,4 +1,6 @@
-{-# LANGUAGE DeriveDataTypeable, DeriveGeneric #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Text.Email.Parser
     ( addrSpec
@@ -122,9 +124,11 @@ isDomainText x = inClass "\33-\90\94-\126" x || isObsNoWsCtl x
 
 quotedString :: Parser ByteString
 quotedString =
-    (BS.cons '"' . flip BS.snoc '"' . BS.concat) <$>
-        between1 (char '"')
-            (many (optional fws >> quotedContent) <* optional fws)
+    between1 (char '"') (do
+        quotedParts <- many (mappend <$> option mempty fws' <*> quotedContent)
+        endWS <- option mempty fws'
+
+        return (mconcat ("\"" : quotedParts ++ [endWS, "\""])))
 
 quotedContent :: Parser ByteString
 quotedContent = takeWhile1 isQuotedText <|> quotedPair
@@ -140,6 +144,18 @@ cfws = skipMany (comment <|> fws)
 
 fws :: Parser ()
 fws = void (wsp1 >> optional (crlf >> wsp1)) <|> (skipMany1 (crlf >> wsp1))
+
+-- | Folding whitespace, where it is significant (i.e. inside a quoted-string)
+fws' :: Parser ByteString
+fws' = do
+    (ws, ()) <- match fws
+    return (BS.pack (stripCRLF (BS.unpack ws)))
+
+    where 
+    stripCRLF ('\r' : '\n' : xs) = stripCRLF xs
+    stripCRLF (x : xs) = x : stripCRLF xs
+    stripCRLF [] = []
+
 
 between :: Applicative f => f l -> f r -> f a -> f a
 between l r x = l *> x <* r

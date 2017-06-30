@@ -1,6 +1,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Main where
 
@@ -8,12 +9,16 @@ import Control.Exception (evaluate)
 import Control.Monad (forM_)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
+import Data.FileEmbed (embedFile, makeRelativeToProject)
+import Data.Function ((&))
 import Data.List (isInfixOf)
 import Data.Maybe (Maybe(..), isNothing, fromJust)
 import Data.Monoid ((<>))
 
 import Test.Hspec (hspec, context, describe, errorCall, it, parallel, shouldBe, shouldSatisfy)
 import Test.QuickCheck (Arbitrary(..), suchThat, property)
+
+import qualified Text.XML.Light as X
 
 import Text.Email.QuasiQuotation (email)
 import Text.Email.Validate
@@ -28,15 +33,21 @@ import Text.Email.Validate
     , unsafeEmailAddress
     )
 
-main :: IO ()
-main = hspec $ parallel $ do
+testXml :: ByteString
+testXml = $(makeRelativeToProject "testdata/isemail/test/tests.xml" >>= embedFile)
 
-    showAndRead
-    canonicalization
-    exampleTests
-    specificFailures
-    simpleAccessors
-    quasiQuotationTests
+main :: IO ()
+main =
+
+    hspec $ parallel $ do
+        showAndRead
+        canonicalization
+        exampleTests
+        testsFromXml
+        specificFailures
+        simpleAccessors
+        quasiQuotationTests
+        testsFromXml
 
 canonicalization =
     describe "emailAddress" $ do
@@ -64,6 +75,40 @@ exampleTests =
                             it "should have correct error message" $
                                 errMessage `shouldSatisfy` (err `isInfixOf`)
                         (_, _) -> return ()
+
+testsFromXml = do
+    let tests = X.onlyElems (X.parseXML testXml) >>= X.findElements (name "test")
+    forM_ tests $ \test -> do
+
+        let id = X.findAttr (name "id") test & fromJust
+
+        let child s = X.findChild (name s) test & fromJust & X.strContent
+
+        let address = child "address"
+        let category = child "category"
+        let diagnosis = child "diagnosis"
+
+        describe ("Test " ++ id ++ ": " ++ show address) $ do
+
+            if (category == "ISEMAIL_ERR"
+                || diagnosis == "ISEMAIL_RFC5322_TOOLONG"
+                || diagnosis == "ISEMAIL_RFC5322_DOMAIN_TOOLONG"
+                || diagnosis == "ISEMAIL_RFC5322_LABEL_TOOLONG"
+                || diagnosis == "ISEMAIL_RFC5322_LOCAL_TOOLONG"
+                || diagnosis == "ISEMAIL_RFC5322_DOMLIT_OBSDTEXT"
+                || diagnosis == "ISEMAIL_RFC5322_DOMAIN")
+                && id /= "35" -- disagree about this example!
+            then
+                it "should be invalid" $
+                    isValid (BS.pack address) `shouldBe` False
+
+            else
+                it "should be valid" $
+                    isValid (BS.pack address) `shouldBe` True
+
+
+    where
+    name s = X.QName s Nothing Nothing
 
 showAndRead =
     describe "show/read instances" $ do
@@ -154,7 +199,6 @@ why ex str = ex { exampleWhy = str }
 
 errorShouldContain :: Example -> String -> Example
 errorShouldContain ex str = ex { errorContains = Just str }
-
 
 examples :: [Example]
 examples =
