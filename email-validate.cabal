@@ -47,6 +47,8 @@ test-suite Main
         hspec >= 2.2.3 && < 2.6,
         QuickCheck >= 2.4 && < 2.12,
         bytestring >= 0.9 && < 0.11
+        file-embed,
+        xml
 
 test-suite doctests
     type: exitcode-stdio-1.0
