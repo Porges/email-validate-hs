@@ -24,8 +24,8 @@ source-repository this
 library
     build-depends:
         base >= 4.4 && < 5,
-        attoparsec >= 0.10.0,
-        bytestring >= 0.9,
+        attoparsec >= 0.10.0 && < 0.14,
+        bytestring >= 0.9 && < 0.11,
         template-haskell >= 2.10.0.0 && < 2.13
     default-language: Haskell2010
     hs-source-dirs: src
@@ -44,9 +44,9 @@ test-suite Main
     build-depends:
         email-validate,
         base >= 4 && < 5,
-        hspec,
+        hspec >= 2.2.3 && < 2.5,
         QuickCheck >= 2.4 && < 2.11,
-        bytestring >= 0.9
+        bytestring >= 0.9 && < 0.11
 
 test-suite doctests
     type: exitcode-stdio-1.0
