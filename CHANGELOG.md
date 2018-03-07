@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.2.3] - 2017-03-07
+
+### Changed
+
+- Bump upper bound for `template-haskell` to 2.14.
+
+## [2.3.2.2] - 2017-02-15
+
+### Changed
+
+- Bump `doctest` upper bound.
+
 ## [2.3.2.1] - 2017-01-23
 
 ### Changed
