@@ -26,8 +26,8 @@ env:
 
 matrix:
   allow_failures:
-    # nightly build is allowed to fail
-    env: ARGS="--resolver nightly"
+  # nightly build is allowed to fail
+  - env: ARGS="--resolver nightly"
 
 before_install:
 # Download and unpack the stack executable
