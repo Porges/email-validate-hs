@@ -267,7 +267,7 @@ domainLiteral opts =
     where
     parseIP =
         if allowIPHost opts
-        then IPv6.encode <$> (string "IPv6:" *> IPv6.parser) <|> IPv4.encode <$> IPv4.parser
+        then (("IPv6:" <>) . IPv6.encode) <$> (string "IPv6:" *> IPv6.parser) <|> IPv4.encode <$> IPv4.parser
         else fail "IP host not permitted"
 
 isDomainText :: ParseOptions opts => Proxy opts -> Char -> Bool
