@@ -26,6 +26,7 @@ import Control.Applicative
 import Control.DeepSeq (NFData(..))
 import Control.Monad (void, when)
 import Data.Attoparsec.Text
+import Data.Binary (Binary(..))
 import Data.ByteString (ByteString)
 import Data.Data (Data, Typeable)
 import Data.Monoid ((<>))
@@ -58,6 +59,9 @@ newtype EmailAddress' opts =
 instance NFData (EmailAddress' opts) where
     rnf (EmailAddress text) = rnf text
 
+instance Binary (EmailAddress' opts) where
+    get = EmailAddress <$> get
+    put (EmailAddress text) = put text
 
 -- | Creates an email address without validating it.
 --   You should only use this when reading data from
