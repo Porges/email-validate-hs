@@ -1,36 +1,48 @@
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Main where
 
 import Control.Exception (evaluate)
-import Control.Monad (forM_)
+import Control.Monad (forM_, when)
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BS
+import Data.Char (ord, chr)
+import Data.Either (isLeft, isRight)
 import Data.FileEmbed (embedFile, makeRelativeToProject)
 import Data.Function ((&))
-import Data.List (isInfixOf)
+import Data.Kind (Type)
+import Data.List (isInfixOf, intercalate)
 import Data.Maybe (Maybe(..), isNothing, fromJust)
 import Data.Monoid ((<>))
-
-import Test.Hspec (hspec, context, describe, errorCall, it, parallel, shouldBe, shouldSatisfy)
-import Test.QuickCheck (Arbitrary(..), suchThat, property)
-
+import Data.Proxy (Proxy(..))
+import Data.Text (Text)
+import qualified Data.Text as T
 import qualified Text.XML.Light as X
 
+import Test.Hspec (hspec, context, describe, errorCall, it, parallel, shouldBe, shouldSatisfy, Spec)
+import Test.QuickCheck (Arbitrary(..), suchThat, property)
+import Test.QuickCheck.Unicode (string)
+
 import Text.Email.QuasiQuotation (email)
+import Text.Email.Parser (DefaultParseOptions, AllowAllParseOptions, ASCIIOnlyParseOptions, ParseOptions)
 import Text.Email.Validate
     ( EmailAddress
+    , EmailAddress'
+    , ParseOptions(..)
     , canonicalizeEmail
-    , domainPart
     , emailAddress
-    , localPart
+    , emailAddressWith
     , isValid
-    , toByteString
-    , validate
+    , isValidWith
+    , toText
     , unsafeEmailAddress
+    , validate
+    , validateWith
     )
 
 testXml :: ByteString
@@ -39,38 +51,38 @@ testXml = $(makeRelativeToProject "testdata/isemail/test/tests.xml" >>= embedFil
 main :: IO ()
 main =
 
-    hspec $ parallel $ do
+    hspec $  do
         showAndRead
         canonicalization
         exampleTests
         testsFromXml
         specificFailures
-        simpleAccessors
         quasiQuotationTests
         testsFromXml
 
 canonicalization =
     describe "emailAddress" $ do
         it "is idempotent" $
-            property prop_doubleCanonicalize
+            property (prop_doubleCanonicalize (Proxy @DefaultParseOptions))
 
 exampleTests =
+    let obsOpts = Proxy @AllowAllParseOptions in
     describe "Examples" $ do
         forM_ examples $ \Example{example, exampleValid, exampleWhy, errorContains} -> do
-            context (show example ++ (if null exampleWhy then "" else " (" ++ exampleWhy ++ ")")) $ do
+            context (show example ++ (if null exampleWhy then "" else " [" ++ exampleWhy ++ "]")) $ do
                 if exampleValid
                 then do
                     it "should be valid" $ 
-                        isValid example `shouldBe` True
+                        isValidWith obsOpts example `shouldBe` True
 
                     it "passes double-canonicalization test" $
-                        prop_doubleCanonicalize (fromJust (emailAddress example))
+                        prop_doubleCanonicalize obsOpts (fromJust (emailAddressWith obsOpts example))
 
                 else do
                     it "should be invalid" $
-                        isValid example `shouldBe` False
+                        isValidWith obsOpts example `shouldBe` False
 
-                    case (errorContains, validate example) of
+                    case (errorContains, validateWith obsOpts example) of
                         (Just err, Left errMessage) ->
                             it "should have correct error message" $
                                 errMessage `shouldSatisfy` (err `isInfixOf`)
@@ -80,35 +92,65 @@ testsFromXml = do
     let tests = X.onlyElems (X.parseXML testXml) >>= X.findElements (name "test")
     forM_ tests $ \test -> do
 
-        let id = X.findAttr (name "id") test & fromJust
+        let testId = X.findAttr (name "id") test & fromJust
 
         let child s = X.findChild (name s) test & fromJust & X.strContent
 
-        let address = child "address"
+        let address = T.pack (translateVisibleControls (child "address"))
+
         let category = child "category"
         let diagnosis = child "diagnosis"
+        let comment = X.findChild (name "comment") test & maybe "" (\c -> " [" ++ X.strContent c ++ "]")
 
-        describe ("Test " ++ id ++ ": " ++ show address) $ do
-
-            if (category == "ISEMAIL_ERR"
-                || diagnosis == "ISEMAIL_RFC5322_TOOLONG"
-                || diagnosis == "ISEMAIL_RFC5322_DOMAIN_TOOLONG"
-                || diagnosis == "ISEMAIL_RFC5322_LABEL_TOOLONG"
-                || diagnosis == "ISEMAIL_RFC5322_LOCAL_TOOLONG"
-                || diagnosis == "ISEMAIL_RFC5322_DOMLIT_OBSDTEXT"
-                || diagnosis == "ISEMAIL_RFC5322_DOMAIN")
-                && id /= "35" -- disagree about this example!
-            then
-                it "should be invalid" $
-                    isValid (BS.pack address) `shouldBe` False
-
-            else
-                it "should be valid" $
-                    isValid (BS.pack address) `shouldBe` True
-
+        let g opts = doTest testId address comment category diagnosis opts
+        g (Proxy @DefaultParseOptions)
+        g (Proxy @ASCIIOnlyParseOptions)
+        g (Proxy @AllowAllParseOptions)
 
     where
     name s = X.QName s Nothing Nothing
+    -- the XML has C0 controls mapped to the visible controls, since XML can't
+    -- contain them directly:
+    translateVisibleControls =
+        map (\c -> 
+            if c >= '\x2400' && c <= '\x241f'
+            then chr (ord c - 0x2400)
+            else c)
+    mode n b = (if b then "+" else "-") ++ n
+
+    doTest :: ParseOptions opts => String -> Text -> String -> String -> String -> Proxy opts -> Spec
+    doTest testId address comment category diagnosis options =
+        describe ("Test " ++ testId ++ ": " ++ show address ++ comment) $ do
+            let ipMode = mode "ip" (allowIPHost options)
+            let uMode = mode "unicode" (allowUnicode options)
+            let oMode = mode "obsolete" (allowObsolete options)
+
+            let modes = ", with modes " ++ intercalate " " [uMode, oMode, ipMode]
+
+            let valid = validateWith options address
+
+            -- there is a bug in the 'ip' package for this example, 
+            -- so we exclude it or the tests hang
+
+            if 
+                | (category == "ISEMAIL_ERR" || category == "ISEMAIL_RFC5322")
+                    && testId /= "35" {- disagree about this example! -} ->
+                    it ("should be invalid [" ++ diagnosis ++ "]" ++ modes)
+                        (valid `shouldSatisfy` isLeft)
+
+                | category == "ISEMAIL_DEPREC" ->
+                    it ("is permitted in obsolete mode only" ++ modes)
+                        (valid `shouldSatisfy` (if allowObsolete options then isRight else isLeft))
+
+
+                | diagnosis == "ISEMAIL_RFC5321_TLDNUMERIC" ||
+                  diagnosis == "ISEMAIL_RFC5321_ADDRESSLITERAL" ->
+                    it ("is permitted with IPs allowed only" ++ modes)
+                        (valid `shouldSatisfy` (if allowIPHost options then isRight else isLeft))
+
+                | otherwise ->
+                    it ("should always be valid [" ++ diagnosis ++ "]" ++ modes)
+                        (valid `shouldSatisfy` isRight)
 
 showAndRead =
     describe "show/read instances" $ do
@@ -116,8 +158,8 @@ showAndRead =
         it "can roundtrip" $
             property prop_showAndReadBack
 
-        it "shows in the same way as ByteString" $
-            property prop_showLikeByteString
+        it "shows in the same way as Text" $
+            property prop_showLikeText
 
         it "should fail if read back without a quote" $
             property prop_showAndReadBackWithoutQuoteFails
@@ -125,49 +167,40 @@ showAndRead =
 specificFailures = do
     describe "GitHub issue #12" $ do
         it "is fixed" $
-            let (Right em) = validate (BS.pack "\"\"@1") in
+            let (Right em) = validate (T.pack "\"\"@1") in
             em `shouldBe` read (show em)
 
     describe "Trailing dot" $ do
         it "is canonicalized" $ 
             canonicalizeEmail "foo@bar.com." `shouldBe` Just "foo@bar.com"
 
-simpleAccessors = do
-    describe "localPart" $
-        it "extracts local part" $
-            localPart (unsafeEmailAddress "local" undefined) `shouldBe` "local"
-
-
-    describe "domainPart" $
-        it "extracts domain part" $
-            domainPart (unsafeEmailAddress undefined "domain") `shouldBe` "domain"
-
 quasiQuotationTests =
     describe "QuasiQuoter" $ do
         it "works as expected" $
-            [email|local@domain.com|] `shouldBe` unsafeEmailAddress "local" "domain.com"
+            [email|local@domain.com|] `shouldBe` unsafeEmailAddress "local@domain.com"
 
-instance Arbitrary ByteString where
-    arbitrary = fmap BS.pack arbitrary
+instance Arbitrary Text where
+    arbitrary = T.pack <$> string
+    shrink = map T.pack . shrink . T.unpack
 
 instance Arbitrary EmailAddress where
     arbitrary = do
-        local <- suchThat arbitrary (\l -> isEmail l (BS.pack "example.com"))
-        domain <- suchThat arbitrary (\d -> isEmail (BS.pack "example") d)
+        local <- suchThat arbitrary (\l -> isEmail l "example.com")
+        domain <- suchThat arbitrary (\d -> isEmail "example" d)
         let (Just result) = emailAddress (makeEmailLike local domain)
         pure result
 
         where
         isEmail l d = isValid (makeEmailLike l d)
-        makeEmailLike l d = BS.concat [l, BS.singleton '@', d]
+        makeEmailLike l d = T.concat [l, T.singleton '@', d]
 
 {- Properties -}
 
-prop_doubleCanonicalize :: EmailAddress -> Bool
-prop_doubleCanonicalize email =  Just email == emailAddress (toByteString email)
+prop_doubleCanonicalize :: ParseOptions opts => Proxy opts -> EmailAddress' opts -> Bool
+prop_doubleCanonicalize opts email =  Just email == emailAddressWith opts (toText email)
 
-prop_showLikeByteString :: EmailAddress -> Bool
-prop_showLikeByteString email = show (toByteString email) == show email
+prop_showLikeText :: EmailAddress -> Bool
+prop_showLikeText email = show (toText email) == show email
 
 prop_showAndReadBack :: EmailAddress -> Bool
 prop_showAndReadBack email = read (show email) == email
@@ -185,12 +218,12 @@ prop_showAndReadBackWithoutQuoteFails email =
 {- Examples -}
 
 data Example = Example
-    { example :: ByteString
+    { example :: Text
     , exampleValid :: Bool
     , exampleWhy :: String
     , errorContains :: Maybe String }
 
-valid, invalid :: ByteString -> Example
+valid, invalid :: Text -> Example
 valid e = Example e True "" Nothing
 invalid e = Example e False "" Nothing
 
@@ -202,7 +235,7 @@ errorShouldContain ex str = ex { errorContains = Just str }
 
 examples :: [Example]
 examples =
-    let domain249 = BS.intercalate "." (take 25 (repeat (BS.replicate 9 'x'))) in
+    let domain249 = T.intercalate "." (take 25 (repeat (T.replicate 9 "x"))) in
     [ valid "first.last@example.com"
     , valid "first.last@example.com." `why` "Dot allowed on end of domain"
     , invalid "local@exam_ple.com" `why` "Underscore not permitted in domain"
@@ -218,7 +251,7 @@ examples =
         `why` "Trailing dot doesn't increase length"
     , invalid ("12345@" <> domain249)
         `why` "Maximum length is 254, this is 255"
-        `errorShouldContain` "too long"
+        `errorShouldContain` "may not exceed 254"
     , valid "first.last@[12.34.56.78]" `why` "IP address"
     , valid "first.last@[IPv6:::12.34.56.78]" `why` "IPv6 address"
     , valid "first.last@[IPv6:1111:2222:3333::4444:12.34.56.78]"
@@ -429,7 +462,7 @@ examples =
     --, invalid "\"foo\"(yay)@(hoopla)[1.2.3.4]" `why` "Address literal can\'t be commented (RFC5321)"
     --, invalid "first.\"\".last@example.com" `why` "Contains a zero-length element"
     --, invalid "test@example" `why` "Dave Child says so"
-    , invalid (BS.replicate 65 'x' <> "@x") `why` "local-part longer than 64 octets" `errorShouldContain` "too long"
+    , invalid (T.replicate 65 "x" <> "@x") `why` "local-part longer than 64 octets" `errorShouldContain` "may not exceed 64"
     , invalid "x@x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456789.x23456" `why` "Domain exceeds 255 chars"
     , invalid "test@123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012.com" `why` "255 characters is maximum length for domain. This is 256."
     , invalid "123456789012345678901234567890123456789012345678901234567890@12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.12345678901234567890123456789012345678901234567890123456789.1234.example.com" `why` "Entire address is longer than 254 characters (this is 257)"

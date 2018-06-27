@@ -1,176 +1,352 @@
+{-# LANGUAGE Trustworthy #-}
+
+{-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Text.Email.Parser
-    ( addrSpec
-    , localPart
-    , domainPart
-    , EmailAddress
+    ( EmailAddress
+    , EmailAddress'
+    , ParseOptions(..)
+    , addrSpec
+    , AllowAllParseOptions
+    , ASCIIOnlyParseOptions
+    , DefaultParseOptions
+    , toAscii
+    , toText
     , unsafeEmailAddress
-    , toByteString
     )
 where
 
-import           Control.Applicative
-import           Control.Monad (guard, void, when)
-import           Data.Attoparsec.ByteString.Char8
-import           Data.ByteString (ByteString)
-import qualified Data.ByteString.Char8 as BS
-import           Data.Data (Data, Typeable)
-import           GHC.Generics (Generic)
+import Control.Applicative
+import Control.Monad (void, when)
+import Data.Attoparsec.Text
+import Data.ByteString (ByteString)
+import Data.Data (Data, Typeable)
+import Data.Monoid ((<>))
+import Data.Proxy (Proxy(..))
+import Data.Text (Text)
+import qualified Data.Text as T
+import GHC.Generics (Generic)
+import qualified Net.IPv4 as IPv4
+import qualified Net.IPv6 as IPv6
 import qualified Text.Read as Read
 
--- | Represents an email address.
-data EmailAddress = EmailAddress ByteString ByteString
-    deriving (Eq, Ord, Data, Typeable, Generic)
+-- $setup
+-- Required for all examples:
+--
+-- >>> :set -XOverloadedStrings
+
+-- | The main email address type. This represents email addresses parsed by the
+-- 'DefaultParseOptions' options set.
+type EmailAddress = EmailAddress' DefaultParseOptions
+
+-- | Represents an email address, typed by what options it was parsed with. This
+-- prevents accidentally mixing up email addresses that were validated under
+-- different options.
+newtype EmailAddress' (opts :: k) =
+    EmailAddress {
+         -- | Get the textual representation of an email address.
+        toText :: Text
+    } deriving (Eq, Ord, Data, Typeable, Generic)
 
 -- | Creates an email address without validating it.
 --   You should only use this when reading data from
 --   somewhere it has already been validated (e.g. a
 --   database).
-unsafeEmailAddress :: ByteString -> ByteString -> EmailAddress
+--
+--   Note that this does no parsing or normalization, so:
+--
+-- >>> unsafeEmailAddress "me@EXAMPLE.com" == unsafeEmailAddress "me@example.com"
+-- False
+--
+unsafeEmailAddress :: Text -> EmailAddress
 unsafeEmailAddress = EmailAddress
 
-instance Show EmailAddress where
-    show = show . toByteString
+-- | Creates an email address without validating it, for any set of validation
+-- options.
+unsafeEmailAddress' :: Text -> EmailAddress' opts
+unsafeEmailAddress' = EmailAddress
 
-instance Read EmailAddress where
+instance Show (EmailAddress' opts) where
+    show = show . toText
+
+instance ParseOptions opts => Read (EmailAddress' opts) where
     readListPrec = Read.readListPrecDefault
     readPrec = Read.parens (do
         bs <- Read.readPrec
-        case parseOnly (addrSpec <* endOfInput) bs of
+        case parseOnly (addrSpec (Proxy @opts) <* endOfInput) bs of
             Left  _ -> Read.pfail
             Right a -> return a)
 
--- | Converts an email address back to a ByteString
-toByteString :: EmailAddress -> ByteString
-toByteString (EmailAddress l d) = BS.concat [l, BS.singleton '@', d]
+-- | Converts an email address back to an ASCII-encoded 'ByteString'.
+--
+-- This will properly encode Unicode domains. Emails with Unicode local-parts
+-- cannot be represented in ASCII and will return `Nothing`.
+--
+-- Example:
+--
+-- >>> error "TODO: write example"
+toAscii :: EmailAddress -> Maybe ByteString
+toAscii (EmailAddress _) = error "TODO: Implement toAscii"
 
--- | Extracts the local part of an email address.
-localPart :: EmailAddress -> ByteString
-localPart (EmailAddress l _) = l
+class ParseOptions po where
+    allowUnicode :: Proxy po -> Bool
+    allowObsolete :: Proxy po -> Bool
+    normalize :: Proxy po -> Bool
+    allowIPHost :: Proxy po -> Bool
+    allowHostName :: Proxy po -> Bool
 
--- | Extracts the domain part of an email address.
-domainPart :: EmailAddress -> ByteString
-domainPart (EmailAddress _ d) = d
+data DefaultParseOptions
+instance ParseOptions DefaultParseOptions where
+    allowUnicode _ = True
+    allowObsolete _ = False
+    normalize _ = True
+    allowIPHost _ = False
+    allowHostName _ = False
 
--- | A parser for email addresses.
-addrSpec :: Parser EmailAddress
-addrSpec = do
-    l <- local
+data ASCIIOnlyParseOptions
+instance ParseOptions ASCIIOnlyParseOptions where
+    allowUnicode _ = False
+    allowObsolete _ = False
+    normalize _ = True
+    allowIPHost _ = False
+    allowHostName _ = False
+
+data AllowAllParseOptions
+instance ParseOptions AllowAllParseOptions where
+    allowUnicode _ = True
+    allowObsolete _ = True
+    normalize _ = True
+    allowIPHost _ = True
+    allowHostName _ = True
+
+{-# SPECIALIZE addrSpec :: Proxy DefaultParseOptions -> Parser EmailAddress #-}
+{-# SPECIALIZE addrSpec :: Proxy ASCIIOnlyParseOptions -> Parser (EmailAddress' ASCIIOnlyParseOptions) #-}
+{-# SPECIALIZE addrSpec :: Proxy AllowAllParseOptions -> Parser (EmailAddress' AllowAllParseOptions) #-}
+addrSpec :: forall opts. (ParseOptions opts) => Proxy opts -> Parser (EmailAddress' opts)
+addrSpec opts = do
+    l <- local opts <?> "local-part"
+    _ <- char '@' <?> "expecting at sign"
+    d <- domain opts <?> "domain-part"
+
+    let email = l <> "@" <> d
+
+    -- Maximum length is 254, per Erratum 1690 on RFC3696:
+    when (T.length email > 254)
+        (fail "Email address is too long (may not exceed 254 octets)")
+
+    return (unsafeEmailAddress' email)
+
+-- | Parser for an email-address local part.
+--
+-- > The local-part portion is a domain-dependent string.  In addresses, 
+-- > it is simply interpreted on the particular host as a name of a
+-- > particular mailbox.
+--
+local :: ParseOptions opts => Proxy opts -> Parser Text
+local opts = do
+    result <-
+        if allowObsolete opts
+        then obsLocalPart 
+        else dotAtom opts <|> quotedString opts
 
     -- Maximum length of local-part is 64, per RFC3696
-    when (BS.length l > 64) (fail "local-part of email is too long (more than 64 octets)")
+    when (T.length result > 64)
+        (fail "Local-part is too long (may not exceed 64 octets)")
 
-    _ <- char '@' <?> "at sign"
-    d <- domain
+    return result
 
-    -- Maximum length is 254, per Erratum 1690 on RFC3696
-    when (BS.length l + BS.length d + 1 > 254) (fail "email address is too long (more than 254 octets)")
+    where 
+        obsLocalPart = T.intercalate (T.singleton '.') <$> word `sepBy1` char '.'
+        word = atom opts <|> quotedString opts
 
-    return (unsafeEmailAddress l d)
+isUnicodeNonAscii :: ParseOptions opts => Proxy opts -> Char -> Bool
+isUnicodeNonAscii opts c =
+    allowUnicode opts &&
+    -- from RFC3629 section-4, UTF8-{2,3,4}
+    (c >= '\x80')
+    -- TODO: confirm this
 
-local :: Parser ByteString
-local = dottedAtoms
+domain :: ParseOptions opts => Proxy opts -> Parser Text
+domain opts = domainName opts <|> domainLiteral opts
 
-domain :: Parser ByteString
-domain = domainName <|> domainLiteral
+domainName :: ParseOptions opts => Proxy opts -> Parser Text
+domainName opts = do
 
-domainName :: Parser ByteString
-domainName = do
-    parsedDomain <- BS.intercalate (BS.singleton '.') <$>
-        domainLabel `sepBy1` char '.' <* optional (char '.')
-
-    -- Domain name must be no greater than 253 chars, per RFC1035
-    guard (BS.length parsedDomain <= 253)
-    return parsedDomain
-
-domainLabel :: Parser ByteString
-domainLabel = do
-    content <- between1 (optional cfws) (fst <$> match (alphaNum >> skipWhile isAlphaNumHyphen))
+    parsedDomain <- 
+        T.intercalate (T.singleton '.')
+        <$> (domainLabel opts) `sepBy1` char '.'
+        <* optional (char '.') -- permit trailing dot
 
     -- Per RFC1035:
-    -- label must be no greater than 63 chars and cannot end with '-'
-    -- (we already enforced that it does not start with '-')
-    guard (BS.length content <= 63 && BS.last content /= '-')
+    -- Domain name must be no greater than 253 octets
+
+    when (T.length parsedDomain > 253)
+        (fail "Domain name is too long (may not exceed 253 octets)")
+        -- TODO: this needs to be performed on punycode version!
+
+    return parsedDomain
+
+domainLabel :: ParseOptions opts => Proxy opts -> Parser Text
+domainLabel opts = do
+    content <- between1 (optional (cfws opts)) (takeWhile1 isAlphaNumHyphen)
+
+    -- Per RFC1035:
+    -- A domain label must be no greater than 63 chars and cannot start or end
+    -- with a hyphen.
+
+    when (T.head content == '-')
+        (fail "Domain label may not start with hyphen")
+
+    when (T.last content == '-')
+        (fail "Domain label may not end with hyphen")
+
+
+    when (T.length content > 63)
+        (fail "Domain label is too long (may not exceed 63 octets)")
+        -- TODO: this needs to be performed on punycode version!
+
     return content
 
+{-
 alphaNum :: Parser Char
 alphaNum = satisfy isAlphaNum
+-}
 
 isAlphaNumHyphen :: Char -> Bool
-isAlphaNumHyphen x = isDigit x || isAlpha_ascii x || x == '-'
+isAlphaNumHyphen c = isAlphaNum c || c == '-'
 
+{- | == Atom (3.2.3) -}
+
+isAtomText :: ParseOptions opts => Proxy opts -> Char -> Bool
+isAtomText opts c =
+    isAlphaNum c ||
+    inClass "!#$%&'*+/=?^_`{|}~-" c ||
+    isUnicodeNonAscii opts c -- RFC6532 addition
+
+atom :: ParseOptions opts => Proxy opts -> Parser Text
+atom opts = between1 (cfws opts) (takeWhile1 (isAtomText opts))
+
+dotAtomText :: ParseOptions opts => Proxy opts -> Parser Text
+dotAtomText opts =
+    (T.intercalate (T.singleton '.')) <$>
+    (takeWhile1 (isAtomText opts)) `sepBy1` (char '.')
+
+dotAtom :: ParseOptions opts => Proxy opts -> Parser Text
+dotAtom opts = between1 (cfws opts) (dotAtomText opts)
+
+{-
 dottedAtoms :: Parser ByteString
-dottedAtoms = BS.intercalate (BS.singleton '.') <$>
-        between1 (optional cfws)
-            (atom <|> quotedString) `sepBy1` char '.'
+dottedAtoms = T.intercalate (T.singleton '.') <$>
+        between1 (optional cfws) atom `sepBy1` char '.'
+    -}
 
-atom :: Parser ByteString
-atom = takeWhile1 isAtomText
+domainLiteral :: ParseOptions opts => Proxy opts -> Parser Text
+domainLiteral opts = 
+    (T.cons '[' . flip T.snoc ']') <$>
+    between (optional (cfws opts) *> char '[') (char ']' <* optional (cfws opts))
+        parseIP
 
-isAtomText :: Char -> Bool
-isAtomText x = isAlphaNum x || inClass "!#$%&'*+/=?^_`{|}~-" x
+    where
+    parseIP =
+        if allowIPHost opts
+        then IPv6.encode <$> (string "IPv6:" *> IPv6.parser) <|> IPv4.encode <$> IPv4.parser
+        else fail "IP host not permitted"
 
-domainLiteral :: Parser ByteString
-domainLiteral =
-    (BS.cons '[' . flip BS.snoc ']' . BS.concat) <$>
-        between (optional cfws *> char '[') (char ']' <* optional cfws)
-            (many (optional fws >> takeWhile1 isDomainText) <* optional fws)
+isDomainText :: ParseOptions opts => Proxy opts -> Char -> Bool
+isDomainText opts c =
+    inClass "\33-\90\94-\126" c ||
+    isObsNoWsCtl opts c
 
-isDomainText :: Char -> Bool
-isDomainText x = inClass "\33-\90\94-\126" x || isObsNoWsCtl x
+{- | == Quoted Strings (3.2.4) -}
 
-quotedString :: Parser ByteString
-quotedString =
-    between1 (char '"') (do
-        quotedParts <- many (mappend <$> option mempty fws' <*> quotedContent)
-        endWS <- option mempty fws'
+isQuotedText :: ParseOptions opts => Proxy opts -> Char -> Bool
+isQuotedText opts c =
+    (c >= '\35' && c <= '\91') ||
+    (c >= '\93' && c <= '\126') ||
+    (c == '\33') ||
+    isUnicodeNonAscii opts c || -- RFC6532 addition
+    isObsNoWsCtl opts c
 
-        return (mconcat ("\"" : quotedParts ++ [endWS, "\""])))
+quotedContent :: ParseOptions opts => Proxy opts -> Parser Text
+quotedContent opts = takeWhile1 (isQuotedText opts) <|> quotedPair opts
 
-quotedContent :: Parser ByteString
-quotedContent = takeWhile1 isQuotedText <|> quotedPair
+quotedString :: ParseOptions opts => Proxy opts -> Parser Text
+quotedString opts = do
+    between1 (cfws opts) $
+        between1 (char '"') $ do
+            quotedParts <- many (mappend <$> option mempty fws' <*> quotedContent opts)
+            endWS <- option mempty fws'
 
-isQuotedText :: Char -> Bool
-isQuotedText x = inClass "\33\35-\91\93-\126" x || isObsNoWsCtl x
+            -- TODO: check if it must be quoted and either keep or remove
+            -- quotes, subject to normalization
+            return (mconcat ("\"" : quotedParts ++ [endWS, "\""]))
 
-quotedPair :: Parser ByteString
-quotedPair = (BS.cons '\\' . BS.singleton) <$> (char '\\' *> (vchar <|> wsp <|> lf <|> cr <|> obsNoWsCtl <|> nullChar))
+{- | == Quoted characters (3.2.1) -}
 
-cfws :: Parser ()
-cfws = skipMany (comment <|> fws)
+quotedPair :: ParseOptions opts => Proxy opts -> Parser Text
+quotedPair opts =
+    (T.cons '\\' . T.singleton) <$>
+    (char '\\' *> qp)
 
+    where
+    qp = vchar <|> wsp <|> obsQp
+
+    obsQp = 
+        if allowObsolete opts
+        then lf <|> cr <|> satisfy (isObsNoWsCtl opts) <|> nullChar
+        else empty
+
+{- | == Folding White Space and Comments (3.2.2) -}
+
+-- | Folding whitespace, where it should be ignored.
 fws :: Parser ()
 fws = void (wsp1 >> optional (crlf >> wsp1)) <|> (skipMany1 (crlf >> wsp1))
 
 -- | Folding whitespace, where it is significant (i.e. inside a quoted-string)
-fws' :: Parser ByteString
+fws' :: Parser Text
 fws' = do
     (ws, ()) <- match fws
-    return (BS.pack (stripCRLF (BS.unpack ws)))
+    return (T.pack (stripCRLF (T.unpack ws)))
 
     where 
     stripCRLF ('\r' : '\n' : xs) = stripCRLF xs
     stripCRLF (x : xs) = x : stripCRLF xs
     stripCRLF [] = []
 
+isCommentText :: ParseOptions opts => Proxy opts -> Char -> Bool
+isCommentText opts c =
+    inClass "\33-\39\42-\91\93-\126" c ||
+    isUnicodeNonAscii opts c || -- RFC6532 addition
+    isObsNoWsCtl opts c
 
-between :: Applicative f => f l -> f r -> f a -> f a
-between l r x = l *> x <* r
+commentContent :: ParseOptions opts => Proxy opts -> Parser ()
+commentContent opts =
+    skipWhile1 (isCommentText opts) <|>
+    void (quotedPair opts) <|>
+    comment opts
 
-between1 :: Applicative f => f lr -> f a -> f a
-between1 lr x = lr *> x <* lr
+comment :: ParseOptions opts => Proxy opts -> Parser ()
+comment opts =
+    between (char '(') (char ')') $
+        skipMany (void (commentContent opts) <|> fws)
 
-comment :: Parser ()
-comment = between (char '(') (char ')') $ skipMany (void commentContent <|> fws)
+cfws :: ParseOptions opts => Proxy opts -> Parser ()
+cfws opts = skipMany (comment opts <|> fws)
 
-commentContent :: Parser ()
-commentContent = skipWhile1 isCommentText <|> void quotedPair <|> comment
-
-isCommentText :: Char -> Bool
-isCommentText x = inClass "\33-\39\42-\91\93-\126" x || isObsNoWsCtl x
+{- Helpers -}
 
 nullChar :: Parser Char
 nullChar = char '\0'
@@ -188,7 +364,10 @@ isWsp :: Char -> Bool
 isWsp x = x == ' ' || x == '\t'
 
 isAlphaNum :: Char -> Bool
-isAlphaNum x = isDigit x || isAlpha_ascii x
+isAlphaNum c =
+    (c >= 'a' && c <= 'z') ||
+    (c >= '0' && c <= '9') ||
+    (c >= 'A' && c <= 'Z')
 
 cr :: Parser Char
 cr = char '\r'
@@ -197,7 +376,7 @@ lf :: Parser Char
 lf = char '\n'
 
 crlf :: Parser ()
-crlf = void $ cr >> lf
+crlf = void (cr *> lf)
 
 isVchar :: Char -> Bool
 isVchar = inClass "\x21-\x7e"
@@ -205,8 +384,13 @@ isVchar = inClass "\x21-\x7e"
 vchar :: Parser Char
 vchar = satisfy isVchar
 
-isObsNoWsCtl :: Char -> Bool
-isObsNoWsCtl = inClass "\1-\8\11-\12\14-\31\127"
+isObsNoWsCtl :: ParseOptions opts => Proxy opts -> Char -> Bool
+isObsNoWsCtl opts c =
+    allowObsolete opts && (inClass "\1-\8\11\12\14-\31\127" c)
 
-obsNoWsCtl :: Parser Char
-obsNoWsCtl = satisfy isObsNoWsCtl
+between :: Applicative f => f l -> f r -> f a -> f a
+between l r x = l *> x <* r
+
+between1 :: Applicative f => f lr -> f a -> f a
+between1 lr x = lr *> x <* lr
+
