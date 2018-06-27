@@ -4,6 +4,9 @@ dist/
 .stack-work/
 .vscode/
 
+*.htm
+*.html
+*.prof
 *.tix
 
 # profiling
