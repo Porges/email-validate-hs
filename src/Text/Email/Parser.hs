@@ -1,19 +1,9 @@
 {-# LANGUAGE Trustworthy #-}
 
 {-# LANGUAGE ApplicativeDo #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Text.Email.Parser
     ( EmailAddress
@@ -21,8 +11,11 @@ module Text.Email.Parser
     , ParseOptions(..)
     , addrSpec
     , AllowAllParseOptions
+    , allowAllParseOptions
     , ASCIIOnlyParseOptions
+    , asciiOnlyParseOptions
     , DefaultParseOptions
+    , defaultParseOptions
     , toAscii
     , toText
     , unsafeEmailAddress
@@ -55,7 +48,7 @@ type EmailAddress = EmailAddress' DefaultParseOptions
 -- | Represents an email address, typed by what options it was parsed with. This
 -- prevents accidentally mixing up email addresses that were validated under
 -- different options.
-newtype EmailAddress' (opts :: k) =
+newtype EmailAddress' opts =
     EmailAddress {
          -- | Get the textual representation of an email address.
         toText :: Text
@@ -85,8 +78,8 @@ instance Show (EmailAddress' opts) where
 instance ParseOptions opts => Read (EmailAddress' opts) where
     readListPrec = Read.readListPrecDefault
     readPrec = Read.parens (do
-        bs <- Read.readPrec
-        case parseOnly (addrSpec (Proxy @opts) <* endOfInput) bs of
+        text <- Read.readPrec
+        case parseOnly (addrSpec Proxy <* endOfInput) text of
             Left  _ -> Read.pfail
             Right a -> return a)
 
@@ -109,6 +102,10 @@ class ParseOptions po where
     allowHostName :: Proxy po -> Bool
 
 data DefaultParseOptions
+
+defaultParseOptions :: Proxy DefaultParseOptions
+defaultParseOptions = Proxy
+
 instance ParseOptions DefaultParseOptions where
     allowUnicode _ = True
     allowObsolete _ = False
@@ -117,6 +114,10 @@ instance ParseOptions DefaultParseOptions where
     allowHostName _ = False
 
 data ASCIIOnlyParseOptions
+
+asciiOnlyParseOptions :: Proxy ASCIIOnlyParseOptions
+asciiOnlyParseOptions = Proxy
+
 instance ParseOptions ASCIIOnlyParseOptions where
     allowUnicode _ = False
     allowObsolete _ = False
@@ -125,6 +126,10 @@ instance ParseOptions ASCIIOnlyParseOptions where
     allowHostName _ = False
 
 data AllowAllParseOptions
+
+allowAllParseOptions :: Proxy AllowAllParseOptions
+allowAllParseOptions = Proxy
+
 instance ParseOptions AllowAllParseOptions where
     allowUnicode _ = True
     allowObsolete _ = True
@@ -135,7 +140,7 @@ instance ParseOptions AllowAllParseOptions where
 {-# SPECIALIZE addrSpec :: Proxy DefaultParseOptions -> Parser EmailAddress #-}
 {-# SPECIALIZE addrSpec :: Proxy ASCIIOnlyParseOptions -> Parser (EmailAddress' ASCIIOnlyParseOptions) #-}
 {-# SPECIALIZE addrSpec :: Proxy AllowAllParseOptions -> Parser (EmailAddress' AllowAllParseOptions) #-}
-addrSpec :: forall opts. (ParseOptions opts) => Proxy opts -> Parser (EmailAddress' opts)
+addrSpec :: (ParseOptions opts) => Proxy opts -> Parser (EmailAddress' opts)
 addrSpec opts = do
     l <- local opts <?> "local-part"
     _ <- char '@' <?> "expecting at sign"

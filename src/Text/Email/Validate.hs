@@ -1,5 +1,3 @@
-{-# LANGUAGE TypeApplications #-}
-
 module Text.Email.Validate
     ( canonicalizeEmail
     , emailAddress
@@ -25,7 +23,7 @@ import Text.Email.Parser
     ( EmailAddress
     , EmailAddress'
     , ParseOptions(..)
-    , DefaultParseOptions
+    , defaultParseOptions
     , addrSpec
     , toText
     , unsafeEmailAddress
@@ -38,7 +36,7 @@ import Text.Email.Parser
 
 -- | Smart constructor for an email address
 emailAddress :: Text -> Maybe EmailAddress
-emailAddress = emailAddressWith (Proxy @DefaultParseOptions)
+emailAddress = emailAddressWith defaultParseOptions
 
 emailAddressWith :: ParseOptions opts => Proxy opts -> Text -> Maybe (EmailAddress' opts)
 emailAddressWith opts = either (const Nothing) Just . validateWith opts
@@ -74,7 +72,7 @@ isValidWith opts = either (const False) (const True) . validateWith opts
 -- >>> validate "not.good"
 -- Left "expecting at sign > '@': not enough input"
 validate :: Text -> Either String EmailAddress
-validate = validateWith (Proxy @DefaultParseOptions)
+validate = validateWith defaultParseOptions
 
 validateWith :: ParseOptions opts => Proxy opts -> Text -> Either String (EmailAddress' opts)
 validateWith opts = parseOnly (addrSpec opts <* endOfInput)

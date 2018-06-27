@@ -4,7 +4,6 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Main where
 
@@ -29,7 +28,7 @@ import Test.QuickCheck (Arbitrary(..), suchThat, property)
 import Test.QuickCheck.Unicode (string)
 
 import Text.Email.QuasiQuotation (email)
-import Text.Email.Parser (DefaultParseOptions, AllowAllParseOptions, ASCIIOnlyParseOptions, ParseOptions)
+import Text.Email.Parser (defaultParseOptions, allowAllParseOptions, asciiOnlyParseOptions, ParseOptions)
 import Text.Email.Validate
     ( EmailAddress
     , EmailAddress'
@@ -63,10 +62,10 @@ main =
 canonicalization =
     describe "emailAddress" $ do
         it "is idempotent" $
-            property (prop_doubleCanonicalize (Proxy @DefaultParseOptions))
+            property (prop_doubleCanonicalize defaultParseOptions)
 
 exampleTests =
-    let obsOpts = Proxy @AllowAllParseOptions in
+    let obsOpts = allowAllParseOptions in
     describe "Examples" $ do
         forM_ examples $ \Example{example, exampleValid, exampleWhy, errorContains} -> do
             context (show example ++ (if null exampleWhy then "" else " [" ++ exampleWhy ++ "]")) $ do
@@ -103,9 +102,9 @@ testsFromXml = do
         let comment = X.findChild (name "comment") test & maybe "" (\c -> " [" ++ X.strContent c ++ "]")
 
         let g opts = doTest testId address comment category diagnosis opts
-        g (Proxy @DefaultParseOptions)
-        g (Proxy @ASCIIOnlyParseOptions)
-        g (Proxy @AllowAllParseOptions)
+        g defaultParseOptions
+        g asciiOnlyParseOptions
+        g allowAllParseOptions
 
     where
     name s = X.QName s Nothing Nothing
