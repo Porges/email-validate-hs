@@ -124,28 +124,26 @@ testsFromXml = do
             let uMode = mode "unicode" (allowUnicode options)
             let oMode = mode "obsolete" (allowObsolete options)
 
-            let modes = ", with modes " ++ intercalate " " [uMode, oMode, ipMode]
+            let modes = ": " ++ intercalate " " [uMode, oMode, ipMode]
 
             let valid = validateWith options address
-
-            -- there is a bug in the 'ip' package for this example, 
-            -- so we exclude it or the tests hang
 
             if 
                 | (category == "ISEMAIL_ERR" || category == "ISEMAIL_RFC5322")
                     && testId /= "35" {- disagree about this example! -} ->
-                    it ("should be invalid [" ++ diagnosis ++ "]" ++ modes)
+                    it ("should never be valid [" ++ diagnosis ++ "]" ++ modes)
                         (valid `shouldSatisfy` isLeft)
 
-                | category == "ISEMAIL_DEPREC" ->
-                    it ("is permitted in obsolete mode only" ++ modes)
-                        (valid `shouldSatisfy` (if allowObsolete options then isRight else isLeft))
-
-
                 | diagnosis == "ISEMAIL_RFC5321_TLDNUMERIC" ||
-                  diagnosis == "ISEMAIL_RFC5321_ADDRESSLITERAL" ->
-                    it ("is permitted with IPs allowed only" ++ modes)
+                  diagnosis == "ISEMAIL_RFC5321_ADDRESSLITERAL" ||
+                  testId == "95" -> {- this is labelled as ISEMAIL_DEPREC_CFWS_NEAR_AT but we need to override that diagnosis -}
+                    it ("only valid with +ip [" ++ diagnosis ++ "]" ++ modes)
                         (valid `shouldSatisfy` (if allowIPHost options then isRight else isLeft))
+
+                | category == "ISEMAIL_DEPREC" &&
+                    diagnosis /= "ISEMAIL_DEPREC_CFWS_NEAR_AT" -> {- this is only a SHOULD NOT, we allow it -}
+                    it ("only valid with +obsolete [" ++ diagnosis ++ "]" ++ modes)
+                        (valid `shouldSatisfy` (if allowObsolete options then isRight else isLeft))
 
                 | otherwise ->
                     it ("should always be valid [" ++ diagnosis ++ "]" ++ modes)
