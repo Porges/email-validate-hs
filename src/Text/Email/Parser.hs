@@ -23,6 +23,7 @@ module Text.Email.Parser
 where
 
 import Control.Applicative
+import Control.DeepSeq (NFData(..))
 import Control.Monad (void, when)
 import Data.Attoparsec.Text
 import Data.ByteString (ByteString)
@@ -53,6 +54,10 @@ newtype EmailAddress' opts =
          -- | Get the textual representation of an email address.
         toText :: Text
     } deriving (Eq, Ord, Data, Typeable, Generic)
+
+instance NFData (EmailAddress' opts) where
+    rnf (EmailAddress text) = rnf text
+
 
 -- | Creates an email address without validating it.
 --   You should only use this when reading data from
