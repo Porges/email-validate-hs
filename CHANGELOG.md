@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.3.2.6] - 2018-07-03
+
+### Changed
+
+- Bump upper bound for `doctest` to 0.17.
+
 ## [2.3.2.5] - 2017-03-15
 
 ### Changed
