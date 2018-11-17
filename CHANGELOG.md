@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.3.2.9] - 2018-11-17
+
+### Changed
+
+- Bump upper bound for `hspec` to 2.7.
+
 ## [2.3.2.8] - 2018-10-14
 
 ### Changed
