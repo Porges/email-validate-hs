@@ -2,6 +2,5 @@ flags: {}
 extra-package-dbs: []
 packages:
 - '.'
-extra-deps:
-- ip-1.3.0
-resolver: lts-11.14
+extra-deps: []
+resolver: lts-13.4
