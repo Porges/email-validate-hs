@@ -1,0 +1,29 @@
+name: Run Tests
+
+on: [push]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        resolver:
+        - 'lts'
+        - 'lts-5'
+        - 'lts-6'
+        - 'lts-7'
+        - 'lts-8'
+        - 'lts-9'
+        - 'lts-10'
+        - 'lts-11'
+        - 'lts-12'
+        - 'lts-13'
+        - 'lts-14'
+   
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Stack
+      run: 'curl -sSL https://get.haskellstack.org/ | sh'
+    - name: Build & Test
+      run: stack test --haddock --no-terminal --resolver ${{ matrix.resolver }}
