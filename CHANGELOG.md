@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.2.12] - 2019-09-27
+
+### Changed
+
+- Bump upper bound for `template-haskell` to allow 2.15.
+
+## [2.3.2.11] - 2019-03-30
+
+### Changed
+
+- Bump upper bound for `QuickCheck` to allow 2.13.
+
 ## [2.3.2.10] - 2019-01-21
 
 ### Changed
