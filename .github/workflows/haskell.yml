@@ -9,11 +9,6 @@ jobs:
       matrix:
         resolver:
         - 'lts'
-        - 'lts-5'
-        - 'lts-6'
-        - 'lts-7'
-        - 'lts-8'
-        - 'lts-9'
         - 'lts-10'
         - 'lts-11'
         - 'lts-12'
