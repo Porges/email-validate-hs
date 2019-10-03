@@ -4,6 +4,7 @@ module Text.Email.Parser
     ( addrSpec
     , localPart
     , domainPart
+    , domainPartOriginal
     , EmailAddress
     , unsafeEmailAddress
     , toByteString
@@ -15,12 +16,13 @@ import           Control.Monad (guard, void, when)
 import           Data.Attoparsec.ByteString.Char8
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.CaseInsensitive as CI
 import           Data.Data (Data, Typeable)
 import           GHC.Generics (Generic)
 import qualified Text.Read as Read
 
 -- | Represents an email address.
-data EmailAddress = EmailAddress ByteString ByteString
+data EmailAddress = EmailAddress ByteString (CI.CI ByteString)
     deriving (Eq, Ord, Data, Typeable, Generic)
 
 -- | Creates an email address without validating it.
@@ -28,7 +30,7 @@ data EmailAddress = EmailAddress ByteString ByteString
 --   somewhere it has already been validated (e.g. a
 --   database).
 unsafeEmailAddress :: ByteString -> ByteString -> EmailAddress
-unsafeEmailAddress = EmailAddress
+unsafeEmailAddress lp = EmailAddress lp . CI.mk
 
 instance Show EmailAddress where
     show = show . toByteString
@@ -43,7 +45,7 @@ instance Read EmailAddress where
 
 -- | Converts an email address back to a ByteString
 toByteString :: EmailAddress -> ByteString
-toByteString (EmailAddress l d) = BS.concat [l, BS.singleton '@', d]
+toByteString (EmailAddress l d) = BS.concat [l, BS.singleton '@', CI.foldedCase d]
 
 -- | Extracts the local part of an email address.
 localPart :: EmailAddress -> ByteString
@@ -51,7 +53,12 @@ localPart (EmailAddress l _) = l
 
 -- | Extracts the domain part of an email address.
 domainPart :: EmailAddress -> ByteString
-domainPart (EmailAddress _ d) = d
+domainPart (EmailAddress _ d) = CI.foldedCase d
+
+-- | Extracts the domain part of an email address in its original case
+domainPartOriginal :: EmailAddress -> ByteString
+domainPartOriginal (EmailAddress _ d) = CI.original d
+
 
 -- | A parser for email addresses.
 addrSpec :: Parser EmailAddress
