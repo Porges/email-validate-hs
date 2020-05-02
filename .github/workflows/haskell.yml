@@ -20,5 +20,19 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
+
+    - name: Cache stack dir
+      uses: actions/cache@v1
+      env: 
+        cache-name: cache-stack-dir
+      with:
+        path: ~/.stack
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.resolver }}-${{ hashFiles('*.cabal') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.resolver }}-
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
     - name: Build & Test
       run: stack test --haddock --no-terminal --resolver ${{ matrix.resolver }}
