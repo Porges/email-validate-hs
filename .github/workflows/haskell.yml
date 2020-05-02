@@ -20,7 +20,5 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
-    - name: Install Stack
-      run: 'curl -sSL https://get.haskellstack.org/ | sh'
     - name: Build & Test
       run: stack test --haddock --no-terminal --resolver ${{ matrix.resolver }}
