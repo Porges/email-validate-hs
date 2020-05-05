@@ -161,6 +161,7 @@ examples =
     let domain249 = BS.intercalate "." (take 25 (repeat (BS.replicate 9 'x'))) in
     [ valid "first.last@example.com"
     , valid "first.last@example.com." `why` "Dot allowed on end of domain"
+    , invalid "first.last@examplecom" `why` "Domain part does not contain a dot, per ICANN https://www.icann.org/news/announcement-2013-08-30-en"
     , invalid "local@exam_ple.com" `why` "Underscore not permitted in domain"
     , valid "1234567890123456789012345678901234567890123456789012345678901234@example.com"
     , valid "\"first last\"@example.com" `why` "Contains quoted spaces"
