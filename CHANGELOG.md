@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.2.14] - 2021-07-01
+
+### Changed
+
+- Bump upper bound for `template-haskell` to allow 2.17.
+
+## [2.3.2.13] - 2020-05-02
+
+### Changed
+
+- Bump upper bound for `template-haskell` to allow 2.16.
+
 ## [2.3.2.12] - 2019-09-27
 
 ### Changed
