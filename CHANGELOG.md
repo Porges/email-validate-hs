@@ -5,6 +5,9 @@
 ### Changed
 
 - Bump upper bound for `template-haskell` to allow 2.17.
+- Bump upper bound to allow `doctest` 0.17.
+- Bump upper bound to allow `hspec` 2.8.
+- Bump upper bound to allow `attoparsec` 0.14.
 
 ## [2.3.2.13] - 2020-05-02
 
