@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.2.15] - 2021-07-05
+
+### Changed
+
+- Bump upper bound to allow `bytestring` 0.11.
+- Bump upper bound to allow `doctest` 0.18.
+
 ## [2.3.2.14] - 2021-07-01
 
 ### Changed
