@@ -18,6 +18,7 @@ jobs:
         - 'lts-16'
         - 'lts-17'
         - 'lts-18'
+        - 'lts-19'
    
     runs-on: ubuntu-latest
 
