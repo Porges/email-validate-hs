@@ -17,9 +17,8 @@ import Text.Email.Validate (validate, localPart, domainPart, unsafeEmailAddress)
 
 -- | A QuasiQuoter for email addresses. 
 --
--- Use it like this:
+-- Use it like this (requires `QuasiQuotes` to be enabled):
 -- 
--- >>> :set -XQuasiQuotes
 -- >>> [email|someone@example.com|]
 -- "someone@example.com"
 email :: QuasiQuoter
