@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.3.2.16] - 2022-03-21
+
+- Bump upper bound to allow `doctest` 0.19.
+- Bump upper bound to allow `hspec` 2.9.
+- Bump upper bound to allow `template-haskell` 2.18.
+
 ## [2.3.2.15] - 2021-07-05
 
 ### Changed
