@@ -56,4 +56,4 @@ test-suite doctests
     main-is: doctests.hs
     build-depends:
         base >= 4 && < 5,
-        doctest >= 0.8 && < 0.20
+        doctest >= 0.8 && < 0.21
