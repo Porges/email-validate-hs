@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.2.18] - 2022-11-24
+
+### Changed
+
+- Bump upper bound to allow `hspec` 2.10 ([#63](https://github.com/Porges/email-validate-hs/pull/63) thanks to [@felixonmars](https://github.com/felixonmars)).
+
+
 ## [2.3.2.17] - 2022-11-24
 
 ### Changed
