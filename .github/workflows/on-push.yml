@@ -1,0 +1,48 @@
+name: Run Tests
+
+on: [push]
+
+jobs:
+  cabal:
+    runs-on: ubuntu-22.04
+    steps:
+    - uses: actions/checkout@v2
+    - name: Cache Cabal dir
+      uses: actions/cache@v3
+      with:
+        path: ~/.cabal
+        key: ${{ runner.os }}-cabal-${{ hashFiles('*.cabal') }}
+        restore-keys: ${{ runner.os }}-cabal-
+
+    - run: cabal test
+    - run: cabal repl --with-ghc=doctest --ghc-options="-XQuasiQuotes -XOverloadedStrings"
+
+  stackage:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        resolver:
+        - 'lts'
+        - 'lts-10'
+        - 'lts-11'
+        - 'lts-12'
+        - 'lts-13'
+        - 'lts-14'
+        - 'lts-15'
+        - 'lts-16'
+        - 'lts-17'
+        - 'lts-18'
+        - 'lts-19'
+        - 'lts-20'
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Cache stack dir
+      uses: actions/cache@v3
+      with:
+        path: ~/.stack
+        key: ${{ runner.os }}-stack-${{ matrix.resolver }}-${{ hashFiles('*.cabal') }}
+        restore-keys: ${{ runner.os }}-stack-${{ matrix.resolver }}-
+
+    - run: stack test --haddock --no-terminal --resolver ${{ matrix.resolver }}
