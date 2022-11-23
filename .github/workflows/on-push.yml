@@ -17,7 +17,7 @@ jobs:
     - run: cabal update 
     - run: cabal test
     - run: cabal install doctest
-    - run: cabal repl --with-ghc=doctest --ghc-options="-XQuasiQuotes -XOverloadedStrings"
+    - run: PATH=$HOME/.cabal/bin:$PATH cabal repl --with-ghc=doctest --ghc-options="-XQuasiQuotes -XOverloadedStrings"
 
   stackage:
     runs-on: ubuntu-22.04
