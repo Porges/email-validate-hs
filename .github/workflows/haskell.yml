@@ -19,14 +19,15 @@ jobs:
         - 'lts-17'
         - 'lts-18'
         - 'lts-19'
+        - 'lts-20'
    
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
 
     - name: Cache stack dir
-      uses: actions/cache@v1
+      uses: actions/cache@v3
       env: 
         cache-name: cache-stack-dir
       with:
