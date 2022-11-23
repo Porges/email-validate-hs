@@ -1,0 +1,39 @@
+name: Run tests on Stackage nightly
+
+on:
+  workflow_dispatch:
+    # allow manual trigger
+
+  schedule:
+  - cron: '33 3 * * *'
+    # run daily
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        resolver:
+        - 'lts'
+        - 'nightly'
+   
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Cache stack dir
+      uses: actions/cache@v3
+      env: 
+        cache-name: cache-stack-dir
+      with:
+        path: ~/.stack
+        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.resolver }}-${{ hashFiles('*.cabal') }}
+        restore-keys: |
+          ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.resolver }}-
+          ${{ runner.os }}-build-${{ env.cache-name }}-
+          ${{ runner.os }}-build-
+          ${{ runner.os }}-
+
+    - name: Build & Test
+      run: stack test --haddock --no-terminal --resolver ${{ matrix.resolver }}
