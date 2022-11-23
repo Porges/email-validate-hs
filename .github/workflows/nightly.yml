@@ -31,9 +31,6 @@ jobs:
         key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.resolver }}-${{ hashFiles('*.cabal') }}
         restore-keys: |
           ${{ runner.os }}-build-${{ env.cache-name }}-${{ matrix.resolver }}-
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
 
     - name: Build & Test
       run: stack test --haddock --no-terminal --resolver ${{ matrix.resolver }}
