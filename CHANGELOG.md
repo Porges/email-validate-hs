@@ -1,5 +1,8 @@
 # Changelog
 
+## [2.3.2.17] - 2022-11-24
+- Bump upper bound to allow `template-haskell` 2.19 ([#65](https://github.com/Porges/email-validate-hs/pull/65) thanks to [@ysangkok](https://github.com/ysangkok)).
+
 ## [2.3.2.16] - 2022-03-21
 
 - Bump upper bound to allow `doctest` 0.19.
