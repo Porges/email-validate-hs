@@ -6,7 +6,7 @@ jobs:
   cabal:
     runs-on: ubuntu-22.04
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Cache Cabal dir
       uses: actions/cache@v3
       with:
@@ -39,7 +39,7 @@ jobs:
         - 'lts-21'
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Cache stack dir
       uses: actions/cache@v3
       with:
