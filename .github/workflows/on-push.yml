@@ -25,7 +25,6 @@ jobs:
       fail-fast: false
       matrix:
         resolver:
-        - 'lts'
         - 'lts-10'
         - 'lts-11'
         - 'lts-12'
@@ -37,6 +36,7 @@ jobs:
         - 'lts-18'
         - 'lts-19'
         - 'lts-20'
+        - 'lts-21'
 
     steps:
     - uses: actions/checkout@v2
