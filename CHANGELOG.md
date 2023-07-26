@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.3.2.19] - 2023-07-27
+
+### Changed
+
+- Bump upper bounds:
+    - allow `hspec` 2.11
+    - allow `bytestring` 0.12
+    - allow `template-haskell` 2.20
+
 ## [2.3.2.18] - 2022-11-24
 
 ### Changed
