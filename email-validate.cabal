@@ -1,5 +1,5 @@
 name:           email-validate
-version:        2.3.2.20
+version:        2.3.2.21
 license:        BSD3
 license-file:   LICENSE
 author:         George Pollard <porges@porg.es>
@@ -19,14 +19,14 @@ source-repository head
 source-repository this
     type: git
     location: git://github.com/Porges/email-validate-hs.git
-    tag: v2.3.2.20
+    tag: v2.3.2.21
 
 library
     build-depends:
         base >= 4.4 && < 5,
         attoparsec >= 0.10.0 && < 0.15,
         bytestring >= 0.9 && < 0.13,
-        template-haskell >= 2.10.0.0 && < 2.22
+        template-haskell >= 2.10.0.0 && < 3
     default-language: Haskell2010
     hs-source-dirs: src
     ghc-options: -Wall
@@ -45,5 +45,5 @@ test-suite Main
         email-validate,
         base >= 4 && < 5,
         hspec >= 2.2.3 && < 2.12,
-        QuickCheck >= 2.4 && < 2.15,
+        QuickCheck >= 2.4 && < 3,
         bytestring >= 0.9 && < 0.13

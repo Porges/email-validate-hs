@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.3.2.21] - 2024-09-22
+
+- Relax some upper bounds to major-major versions:
+  - `QuickCheck` now <3
+  - `template-haskell` now <3
+
 ## [2.3.2.19] - 2023-07-27
 
 ### Changed
