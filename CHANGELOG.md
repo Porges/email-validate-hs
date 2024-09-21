@@ -2,9 +2,14 @@
 
 ## [2.3.2.21] - 2024-09-22
 
-- Relax some upper bounds to major-major versions:
+- Relax some upper bounds to major-major versions to reduce frequency of updates:
   - `QuickCheck` now <3
   - `template-haskell` now <3
+
+## [2.3.2.20] - 2024-02-23
+
+- Bump upper bounds:
+    - allow `template-haskell` 2.21
 
 ## [2.3.2.19] - 2023-07-27
 
