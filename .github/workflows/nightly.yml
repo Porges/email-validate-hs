@@ -17,13 +17,13 @@ jobs:
         - 'lts'
         - 'nightly'
    
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Cache stack dir
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       env: 
         cache-name: cache-stack-dir
       with:

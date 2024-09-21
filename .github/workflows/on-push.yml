@@ -4,11 +4,11 @@ on: [push]
 
 jobs:
   cabal:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Cache Cabal dir
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cabal
         key: ${{ runner.os }}-cabal-${{ hashFiles('*.cabal') }}
@@ -20,7 +20,7 @@ jobs:
     - run: PATH=$HOME/.cabal/bin:$PATH cabal repl --with-ghc=doctest --ghc-options="-XQuasiQuotes -XOverloadedStrings"
 
   stackage:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -37,11 +37,12 @@ jobs:
         - 'lts-19'
         - 'lts-20'
         - 'lts-21'
+        - 'lts-22'
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Cache stack dir
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.stack
         key: ${{ runner.os }}-stack-${{ matrix.resolver }}-${{ hashFiles('*.cabal') }}
