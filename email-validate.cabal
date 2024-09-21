@@ -33,6 +33,7 @@ library
     exposed-modules:
         Text.Email.QuasiQuotation,
         Text.Email.Validate,
+        Text.Domain.Validate,
         Text.Email.Parser
 
 test-suite Main
