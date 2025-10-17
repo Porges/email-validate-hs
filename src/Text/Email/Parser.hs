@@ -15,6 +15,7 @@ import           Control.Monad (guard, void, when)
 import           Data.Attoparsec.ByteString.Char8
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
+import           Data.Char (ord)
 import           Data.Data (Data, Typeable)
 import           GHC.Generics (Generic)
 import qualified Text.Read as Read
@@ -106,7 +107,7 @@ dottedAtoms = BS.intercalate (BS.singleton '.') <$>
             (atom <|> quotedString) `sepBy1` char '.'
 
 atom :: Parser ByteString
-atom = takeWhile1 isAtomText
+atom = BS.concat <$> many1 (takeWhile1 isAtomText <|> nonAsciiUtf8)
 
 isAtomText :: Char -> Bool
 isAtomText x = isAlphaNum x || inClass "!#$%&'*+/=?^_`{|}~-" x
@@ -127,13 +128,15 @@ quotedString =
             (many (optional fws >> quotedContent) <* optional fws)
 
 quotedContent :: Parser ByteString
-quotedContent = takeWhile1 isQuotedText <|> quotedPair
+quotedContent = takeWhile1 isQuotedText <|> quotedPair <|> nonAsciiUtf8
 
 isQuotedText :: Char -> Bool
 isQuotedText x = inClass "\33\35-\91\93-\126" x || isObsNoWsCtl x
 
 quotedPair :: Parser ByteString
-quotedPair = (BS.cons '\\' . BS.singleton) <$> (char '\\' *> (vchar <|> wsp <|> lf <|> cr <|> obsNoWsCtl <|> nullChar))
+quotedPair = char '\\' *> (BS.cons '\\' <$>
+  ((BS.singleton <$> (vchar <|> wsp <|> lf <|> cr <|> obsNoWsCtl <|> nullChar))
+  <|> nonAsciiUtf8))
 
 cfws :: Parser ()
 cfws = skipMany (comment <|> fws)
@@ -151,7 +154,7 @@ comment :: Parser ()
 comment = between (char '(') (char ')') $ skipMany (void commentContent <|> fws)
 
 commentContent :: Parser ()
-commentContent = skipWhile1 isCommentText <|> void quotedPair <|> comment
+commentContent = skipWhile1 isCommentText <|> void quotedPair <|> void nonAsciiUtf8 <|> comment
 
 isCommentText :: Char -> Bool
 isCommentText x = inClass "\33-\39\42-\91\93-\126" x || isObsNoWsCtl x
@@ -188,6 +191,45 @@ isVchar = inClass "\x21-\x7e"
 
 vchar :: Parser Char
 vchar = satisfy isVchar
+
+nonAsciiUtf8 :: Parser ByteString
+nonAsciiUtf8 = utf8Pair <|> utf8Triple <|> utf8Quad
+
+utf8Pair :: Parser ByteString
+utf8Pair = convert <$> satisfy byteOne <*> satisfy byteTwo
+  where
+    convert :: Char -> Char -> ByteString
+    convert high low = BS.pack [high, low]
+    byteOne x =
+      let ox = ord x
+       in ox >= 0xc0 && ox <= 0xdf
+    byteTwo x =
+      let ox = ord x
+       in ox >= 0x80 && ox <= 0xbf
+
+utf8Triple :: Parser ByteString
+utf8Triple = convert <$> satisfy byteOne <*> satisfy byteLater <*> satisfy byteLater
+  where
+    convert :: Char -> Char -> Char -> ByteString
+    convert high middle low = BS.pack [high, middle, low]
+    byteOne x =
+      let ox = ord x
+       in ox >= 0xe0 && ox <= 0xef
+    byteLater x =
+      let ox = ord x
+       in ox >= 0x80 && ox <= 0xbf
+
+utf8Quad :: Parser ByteString
+utf8Quad = convert <$> satisfy byteOne <*> satisfy byteLater <*> satisfy byteLater <*> satisfy byteLater
+  where
+    convert :: Char -> Char -> Char -> Char -> ByteString
+    convert high middleHigh middleLow low = BS.pack [high, middleHigh, middleLow, low]
+    byteOne x =
+      let ox = ord x
+       in ox >= 0xf0 && ox <= 0xf7
+    byteLater x =
+      let ox = ord x
+       in ox >= 0x80 && ox <= 0xbf
 
 isObsNoWsCtl :: Char -> Bool
 isObsNoWsCtl = inClass "\1-\8\11-\12\14-\31\127"
